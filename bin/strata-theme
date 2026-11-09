@@ -1,0 +1,104 @@
+#!/bin/bash
+# Switch the Omarchy theme for a stratum, fast (lua/strata.lua runs this as
+# you arrive on a stratum with a theme of its own):
+#
+#   1. The theme is swapped in from a cache built the first time it was set:
+#      the shell (bar, panels), Hyprland's borders and the terminals change
+#      at once.
+#   2. Once you've stayed SETTLE ms, everything else Omarchy retints (btop,
+#      browsers, editors, the theme-set hooks...).
+#
+# Without a cached copy it runs omarchy-theme-set (minus the wallpaper,
+# which Strata draws) and caches the result.
+#
+#   strata-theme apply <theme> [settle-ms]
+#   strata-theme cache <theme>      cache the theme that's current now
+
+set -uo pipefail
+
+CUR="$HOME/.local/state/omarchy/current"
+CACHE="$HOME/.cache/strata/themes"
+RT="${XDG_RUNTIME_DIR:-/tmp}"
+MARK="$RT/strata-theme-switching" # the capture hook leaves our own switches alone
+
+cache_current() { # <name>
+  mkdir -p "$CACHE"
+  rm -rf "$CACHE/$1.tmp"
+  cp -al "$CUR/theme" "$CACHE/$1.tmp" 2>/dev/null || cp -a "$CUR/theme" "$CACHE/$1.tmp"
+  rm -rf "$CACHE/$1" && mv "$CACHE/$1.tmp" "$CACHE/$1"
+}
+
+later_commands=(
+  omarchy-restart-btop
+  omarchy-restart-opencode
+  omarchy-restart-helix
+  omarchy-theme-set-tmux
+  omarchy-theme-set-gnome
+  omarchy-theme-set-pi
+  omarchy-theme-set-claude
+  omarchy-theme-set-hermes
+  omarchy-theme-set-t3code
+  omarchy-theme-set-browser
+  omarchy-theme-set-vscode
+  omarchy-theme-set-obsidian
+  omarchy-theme-set-keyboard
+)
+
+apply() { # <name> <settle-ms>
+  local name="$1" settle="${2:-1500}"
+  [[ $(cat "$CUR/theme.name" 2>/dev/null) == "$name" ]] && return 0
+  date +%s >"$MARK"
+  echo "$name" >"$RT/strata-theme-current"
+
+  if [[ ! -f $CACHE/$name/colors.toml ]]; then
+    OMARCHY_THEME_SKIP_BACKGROUND=1 omarchy-theme-set "$name" >/dev/null 2>&1
+    cache_current "$name"
+    return 0
+  fi
+
+  # Swap the cached theme in, the way omarchy-theme-set swaps its staging dir.
+  # Hard links: instant however many backgrounds the theme carries.
+  rm -rf "$CUR/.strata-next" "$CUR/.strata-old"
+  cp -al "$CACHE/$name" "$CUR/.strata-next" 2>/dev/null || cp -a "$CACHE/$name" "$CUR/.strata-next" || return 1
+  mv "$CUR/theme" "$CUR/.strata-old" && mv "$CUR/.strata-next" "$CUR/theme"
+  rm -rf "$CUR/.strata-old"
+  echo "$name" >"$CUR/theme.name"
+
+  # What's on screen, now.
+  local colors="" shellp=""
+  [[ -f $CUR/theme/colors.toml ]] && colors=$(base64 -w 0 "$CUR/theme/colors.toml")
+  [[ -f $CUR/theme/shell.toml ]] && shellp=$(base64 -w 0 "$CUR/theme/shell.toml")
+  # (Hyprland's borders were already recoloured by lua/strata.lua.)
+  timeout 2 omarchy-shell shell applyTheme "$colors" "$shellp" >/dev/null 2>&1 &
+  omarchy-restart-terminal >/dev/null 2>&1 &
+  omarchy-theme-set-foot >/dev/null 2>&1 &
+  wait
+
+  # The rest, if you're still on this theme in a moment.
+  (
+    exec 9>&-
+    sleep "$(awk -v ms="$settle" 'BEGIN { printf "%.2f", ms / 1000 }')"
+    [[ $(cat "$CUR/theme.name" 2>/dev/null) == "$name" ]] || exit 0
+    date +%s >"$MARK"
+    for c in "${later_commands[@]}"; do
+      command -v "$c" >/dev/null && "$c" >/dev/null 2>&1 &
+    done
+    wait
+    omarchy-hook theme-set "$name" >/dev/null 2>&1
+  ) </dev/null >/dev/null 2>&1 &
+}
+
+case "${1:-}" in
+  apply)
+    exec 9>"$RT/strata-theme.lock"
+    flock 9
+    apply "${2:?theme}" "${3:-1500}"
+    ;;
+  cache)
+    cache_current "${2:?theme}"
+    ;;
+  *)
+    echo "usage: strata-theme apply <theme> [settle-ms] | cache <theme>" >&2
+    exit 2
+    ;;
+esac

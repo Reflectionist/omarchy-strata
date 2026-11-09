@@ -1,0 +1,14 @@
+{
+  "stack": ["terminal", "agents", "browser", "notes", "@free", "chat", "media", "games"],
+  "strata": {
+    "agents": {
+      "name": "Agents", "icon": "󱙝", "iconActive": "󰊠", "accent": "accent",
+      "workspace": "name:agents", "hotkey": "2", "follow": false,
+      "match": { "types": [], "apps": ["^agentstest$"], "titles": [] },
+      "profile": { "windows": { "column_width": 1 } }
+    },
+    "terminal": { "match": { "apps": ["^(foot|stratatest)$"] } }
+  },
+  "themes": { "switching": false, "auto_wallpapers": false },
+  "navigation": { "fine_step": 0.1, "wrap_hold": true, "wrap_horizontal": false, "close_gap": true }
+}

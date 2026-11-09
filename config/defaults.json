@@ -1,0 +1,216 @@
+{
+  "version": 1,
+  "stack": ["terminal", "code", "browser", "notes", "@free", "chat", "media", "creative", "games"],
+  "strata": {
+    "terminal": {
+      "name": "Terminal",
+      "icon": "󰞷",
+      "iconActive": "󰆍",
+      "accent": "accent",
+      "workspace": "name:terminal",
+      "hotkey": "1",
+      "follow": true,
+      "primary": "terminal",
+      "match": {
+        "types": ["TerminalEmulator"],
+        "apps": ["^(Alacritty|alacritty|foot|footclient|kitty|com\\.mitchellh\\.ghostty|org\\.wezfurlong\\.wezterm)$"],
+        "titles": []
+      },
+      "profile": {},
+      "theme": null,
+      "wallpaper": null,
+      "pip": { "enabled": false, "apps": [] }
+    },
+    "code": {
+      "name": "Code",
+      "icon": "󱀫",
+      "iconActive": "󰈮",
+      "accent": "accent",
+      "workspace": "name:code",
+      "hotkey": "2",
+      "follow": true,
+      "primary": "",
+      "match": {
+        "types": ["IDE"],
+        "apps": ["^(code|Code|code-oss|VSCodium|codium|cursor|Cursor|dev\\.zed\\.Zed|zed|neovide|jetbrains-.*)$"],
+        "titles": []
+      },
+      "profile": {},
+      "theme": null,
+      "wallpaper": null,
+      "pip": { "enabled": false, "apps": [] }
+    },
+    "browser": {
+      "name": "Browser",
+      "icon": "󰆌",
+      "iconActive": "󰆋",
+      "accent": "accent",
+      "workspace": "name:browser",
+      "hotkey": "3",
+      "follow": true,
+      "primary": "browser",
+      "match": {
+        "types": ["WebBrowser"],
+        "apps": ["^(helium|chromium|Chromium|google-chrome|brave-browser|firefox|zen|org\\.qutebrowser\\.qutebrowser)$"],
+        "titles": []
+      },
+      "profile": {},
+      "theme": null,
+      "wallpaper": null,
+      "pip": { "enabled": false, "apps": [] }
+    },
+    "notes": {
+      "name": "Notes & docs",
+      "icon": "󰺿",
+      "iconActive": "󰠮",
+      "accent": "accent",
+      "workspace": "name:notes",
+      "hotkey": "4",
+      "follow": true,
+      "primary": "",
+      "match": {
+        "types": ["Office", "Viewer"],
+        "apps": ["^(obsidian|libreoffice-.*|soffice|org\\.pwmt\\.zathura|org\\.gnome\\.Evince|evince|org\\.kde\\.okular|typora|Typora|com\\.github\\.xournalpp\\.xournalpp)$"],
+        "titles": []
+      },
+      "profile": {},
+      "theme": null,
+      "wallpaper": null,
+      "pip": { "enabled": false, "apps": [] }
+    },
+    "chat": {
+      "name": "Chat",
+      "icon": "󰠢",
+      "iconActive": "󰊌",
+      "accent": "accent",
+      "workspace": "name:chat",
+      "hotkey": "6",
+      "follow": false,
+      "primary": "",
+      "match": {
+        "types": ["InstantMessaging", "Chat"],
+        "apps": ["^(vesktop|discord|Discord|vencord|signal|Signal|org\\.telegram\\.desktop|Slack|slack|Element|element|chrome-web\\.whatsapp\\.com.*|chrome-discord\\.com.*)$"],
+        "titles": []
+      },
+      "profile": { "private": true },
+      "theme": null,
+      "wallpaper": null,
+      "pip": { "enabled": false, "apps": [] }
+    },
+    "media": {
+      "name": "Media",
+      "icon": "󰐋",
+      "iconActive": "󱉺",
+      "accent": "accent",
+      "workspace": "name:media",
+      "hotkey": "7",
+      "follow": true,
+      "primary": "",
+      "match": {
+        "types": ["AudioVideo", "Player"],
+        "apps": ["^(spotify|Spotify|mpv|vlc|com\\.obsproject\\.Studio|io\\.github\\.celluloid_player\\.Celluloid|org\\.gnome\\.Totem|chrome-(www\\.)?youtube\\.com.*|chrome-(www\\.)?twitch\\.tv.*)$"],
+        "titles": []
+      },
+      "profile": {},
+      "theme": null,
+      "wallpaper": null,
+      "pip": { "enabled": true, "apps": ["^(mpv|vlc|io\\.github\\.celluloid_player\\.Celluloid|org\\.gnome\\.Totem|chrome-(www\\.)?youtube\\.com.*|chrome-(www\\.)?twitch\\.tv.*)$"] }
+    },
+    "creative": {
+      "name": "Creative",
+      "icon": "󱍜",
+      "iconActive": "󰢵",
+      "accent": "accent",
+      "workspace": "name:creative",
+      "hotkey": "8",
+      "follow": true,
+      "primary": "",
+      "match": {
+        "types": ["Graphics", "2DGraphics", "3DGraphics", "VectorGraphics", "RasterGraphics"],
+        "apps": ["^(gimp|Gimp|GIMP|gimp-.*|inkscape|org\\.inkscape\\.Inkscape|blender|Blender|krita|org\\.kde\\.krita|kdenlive|org\\.kde\\.kdenlive|darktable|Darktable)$"],
+        "titles": []
+      },
+      "profile": {},
+      "theme": null,
+      "wallpaper": null,
+      "pip": { "enabled": false, "apps": [] }
+    },
+    "games": {
+      "name": "Games",
+      "icon": "󰺷",
+      "iconActive": "󰊗",
+      "accent": "accent",
+      "workspace": "name:games",
+      "hotkey": "9",
+      "extraHotkeys": ["grave"],
+      "follow": true,
+      "primary": "steam",
+      "match": {
+        "types": ["Game"],
+        "apps": ["^(steam|steam_app_[0-9]+|gamescope|lutris|net\\.lutris\\.Lutris|heroic|com\\.heroicgameslauncher\\.hgl)$"],
+        "titles": []
+      },
+      "profile": {
+        "fullscreen": "^(steam_app_[0-9]+|gamescope)$"
+      },
+      "theme": null,
+      "wallpaper": null,
+      "pip": { "enabled": false, "apps": [] }
+    }
+  },
+  "free": {
+    "dynamic": true,
+    "count": 5,
+    "name": "Free",
+    "accent": "accent",
+    "hotkey": "5",
+    "primary": "terminal"
+  },
+  "learned": [],
+  "suggestions": [],
+  "navigation": {
+    "step": 0.5,
+    "view_step": 0.5,
+    "fine_step": 0.125,
+    "jump_near": 2,
+    "margin": 4,
+    "wrap_vertical": true,
+    "wrap_horizontal": false,
+    "wrap_hold": false,
+    "land_focus": "grid",
+    "close_gap": false
+  },
+  "keys": {
+    "grid": true,
+    "overview": true,
+    "wheel": true,
+    "gestures": true,
+    "strata": true,
+    "launch": true
+  },
+  "blank": { "look": "both" },
+  "glyph": { "animation": "cage", "outline": "auto" },
+  "cross": {
+    "trigger": "move",
+    "placement": "bottom",
+    "fade_ms": 800,
+    "size": 0.16
+  },
+  "overview": { "search_on_shift": true },
+  "themes": {
+    "switching": true,
+    "auto_wallpapers": false,
+    "base": null,
+    "wallpaper_vertical": "crossfade",
+    "wallpaper_parallax": false,
+    "parallax_strength": 0.08,
+    "settle_ms": 1500
+  },
+  "pip": {
+    "corner": "bottom-right",
+    "width": 0.25,
+    "avoid_focus": false,
+    "seek_bar": true,
+    "remember": {}
+  }
+}

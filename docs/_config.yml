@@ -1,0 +1,27 @@
+title: Strata
+description: A 2D workspace grid for Omarchy and Hyprland
+url: https://reflectionist.github.io
+baseurl: /omarchy-strata
+
+remote_theme: just-the-docs/just-the-docs@v0.10.0
+plugins:
+  - jekyll-remote-theme
+
+color_scheme: dark
+search_enabled: true
+heading_anchors: true
+
+aux_links:
+  "Strata on GitHub": "https://github.com/Reflectionist/omarchy-strata"
+
+back_to_top: true
+back_to_top_text: "Back to top"
+
+footer_content: "Strata is released under the MIT license."
+
+gh_edit_link: true
+gh_edit_link_text: "Edit this page on GitHub"
+gh_edit_repository: "https://github.com/Reflectionist/omarchy-strata"
+gh_edit_branch: "main"
+gh_edit_source: docs
+gh_edit_view_mode: "tree"

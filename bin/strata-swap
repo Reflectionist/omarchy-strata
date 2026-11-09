@@ -1,0 +1,61 @@
+#!/bin/bash
+# Swap a built hypr-strata.so into a running Hyprland (the one named by
+# $HYPRLAND_INSTANCE_SIGNATURE) without losing the grid. Unloading repacks
+# every stratum and resets column widths, so first note where each window
+# sits (column x, the column's own width, the column it's stacked in) and the
+# camera, then put it all back.
+#   strata-swap <path of the .so the session loads>
+# Used by strata-setup --rebuild (live) and tests/swap.sh (nested).
+set -u
+SO=${1:?path of the .so}
+[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ] || { echo "strata-swap: no Hyprland session" >&2; exit 1; }
+
+# "camera X" ; "addr x cw" for a column's top window ; "addr x cw top-addr" for
+# a window stacked under it. cw "-" when unknown (an older plugin only reports
+# a lone column's on-screen width, which isn't its own).
+# Where visual focus was: a blank slot ("cursor x w"), else the focused window.
+CURSOR="$(hyprctl repl 'local s = hl.plugin.strata.state() return s and s.blank and (s.x .. " " .. s.w) or ""' 2>/dev/null)"
+ACTIVE="$(hyprctl activewindow -j 2>/dev/null | jq -r '.address // empty' 2>/dev/null)"
+
+SNAP="$(hyprctl repl 'local out = {} local s = hl.plugin.strata.state() if s then out[#out + 1] = "camera " .. s.camera end
+for _, ws in ipairs(hl.get_workspaces()) do
+  local cols = hl.plugin.strata.columns(ws.id)
+  for _, c in ipairs(cols) do
+    local cw = c.cw or (#cols > 1 and c.w) or "-"
+    for i, a in ipairs(c.windows) do out[#out + 1] = a .. " " .. c.x .. " " .. cw .. (i > 1 and (" " .. c.windows[1]) or "") end
+  end
+end
+return table.concat(out, ";")' 2>/dev/null)"
+
+hyprctl plugin unload "$SO" >/dev/null 2>&1 || true
+sleep 0.5
+hyprctl plugin load "$SO" >/dev/null 2>&1
+hyprctl reload >/dev/null 2>&1
+for _ in $(seq 1 20); do hyprctl plugin list 2>/dev/null | grep -q "hypr-strata" && break; sleep 0.25; done
+sleep 0.5
+
+PLACE=""; JOIN=""; WIDTH=""; CAM=""
+IFS=';' read -ra ENTRIES <<< "$SNAP"
+for e in "${ENTRIES[@]}"; do
+  set -- $e
+  if [ "$1" = camera ]; then CAM="$2"; continue; fi
+  [ $# -ge 3 ] || continue
+  [ "$3" != "-" ] && WIDTH+="hl.plugin.strata.width('$1', $3) "
+  if [ $# -eq 3 ]; then PLACE+="hl.plugin.strata.place('$1', $2) "
+  else JOIN+="hl.plugin.strata.join('$1', '$4') "; fi
+done
+# Widths first (placing pushes neighbours by width). Places twice: the first
+# pass can push a column right of where a later one goes (columns are only
+# ever pushed right), the second settles them.
+[ -n "$WIDTH" ] && hyprctl eval "$WIDTH" >/dev/null 2>&1
+[ -n "$PLACE" ] && hyprctl eval "$PLACE" >/dev/null 2>&1
+[ -n "$JOIN" ] && hyprctl eval "$JOIN" >/dev/null 2>&1
+[ -n "$PLACE" ] && hyprctl eval "$PLACE" >/dev/null 2>&1
+[ -n "$CAM" ] && hyprctl eval "local s = hl.plugin.strata.state() if s then hl.plugin.strata.pan($CAM - s.camera) end" >/dev/null 2>&1
+# The new plugin starts with no cursor: put it back. Neither moves the camera
+# while what it targets is in view; a blank slot takes the pointer with it,
+# as stepping onto blank space does.
+set -- $CURSOR
+if [ $# -eq 2 ]; then hyprctl eval "hl.plugin.strata.aim($1, $2)" >/dev/null 2>&1
+elif [ -n "$ACTIVE" ]; then hyprctl eval "hl.plugin.strata.reveal('$ACTIVE')" >/dev/null 2>&1; fi
+echo "swapped: ${#ENTRIES[@]} entries restored"

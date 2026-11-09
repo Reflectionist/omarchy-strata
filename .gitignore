@@ -1,0 +1,14 @@
+# Build output (bin/strata-setup builds into ~/.local/share/strata; a plain
+# `make` in native/ builds into native/build)
+/native/build/
+/native/compile_flags.txt
+/luac.out
+# Test runtime (tests/start.sh)
+/tests/shots/
+/tests/so/
+/tests/config/
+/tests/qs/*
+!/tests/qs/shell.qml
+/native/*.so
+/native/obj/
+/native/.built-against

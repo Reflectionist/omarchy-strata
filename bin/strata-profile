@@ -1,0 +1,66 @@
+#!/bin/bash
+# The part of a stratum's profile that lives outside Hyprland, switched on as
+# you arrive on a stratum and back off as you leave (lua/strata.lua calls
+# this on every stratum change that needs it):
+#
+#   audio_output a PulseAudio/PipeWire sink name to switch the default to
+#
+# Leaving restores exactly what was there before. State lives in
+# $XDG_RUNTIME_DIR/strata-profile.
+#
+#   strata-profile switch <from-id> <to-id>
+#   strata-profile status
+
+set -uo pipefail
+
+CFG="$HOME/.config/strata"
+DEFAULTS="$(dirname "$(readlink -f "$0")")/../config/defaults.json"
+STATE="${XDG_RUNTIME_DIR:-/tmp}/strata-profile"
+mkdir -p "$STATE"
+
+profile() { # <stratum id> -> the merged profile JSON ({} if none)
+  [[ -z ${1:-} || $1 == @free ]] && { echo '{}'; return; }
+  jq -s --arg id "$1" '(.[0] * (.[1] // {})) | .strata[$id].profile // {}' \
+    "$DEFAULTS" "$CFG/strata.json" 2>/dev/null || echo '{}'
+}
+
+flag() { jq -r --arg k "$2" '.[$k] // empty' <<<"$1"; }
+
+leave() { # <id>
+  local f="$STATE/active"
+  [[ -f $f ]] || return
+  # shellcheck disable=SC1090
+  source "$f"
+  rm -f "$f"
+  [[ -n ${sink_prev:-} ]] && pactl set-default-sink "$sink_prev" 2>/dev/null
+}
+
+enter() { # <id>
+  local p sink sink_prev=""
+  p=$(profile "$1")
+  [[ $p == '{}' ]] && return
+
+  sink=$(flag "$p" audio_output)
+  if [[ -n $sink ]]; then
+    sink_prev=$(pactl get-default-sink 2>/dev/null)
+    pactl set-default-sink "$sink" 2>/dev/null || sink_prev=""
+  fi
+  declare -p sink_prev | sed 's/^declare -- //' >"$STATE/active"
+  echo "stratum=$1" >>"$STATE/active"
+}
+
+case "${1:-}" in
+  switch)
+    exec 9>"$STATE/lock"
+    flock -w 10 9 || exit 1
+    leave "${2:-}"
+    enter "${3:-}"
+    ;;
+  status)
+    cat "$STATE/active" 2>/dev/null || echo "no stratum profile active"
+    ;;
+  *)
+    echo "usage: strata-profile switch <from> <to> | status" >&2
+    exit 2
+    ;;
+esac

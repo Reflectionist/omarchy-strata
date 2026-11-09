@@ -1,0 +1,88 @@
+---
+title: Usage
+nav_order: 3
+---
+
+# Usage
+{: .no_toc }
+
+1. TOC
+{:toc}
+
+Distances below are in **steps**, set in [Settings › Navigation](settings#navigation): the focus step (default half a screen) for moving focus through empty space, the window step (default half a screen) for moving windows, and the fine step (default an eighth of a screen).
+
+## Moving focus
+
+| Keys | Action |
+|---|---|
+| SUPER+LEFT/RIGHT | Focus the next window in that direction if it is within the jump distance; otherwise move one focus step into empty space. Past the outermost window, focus continues into empty space up to the travel margin. |
+| SUPER+UP/DOWN | Focus the window above or below in the same column; at the top or bottom of the column, switch to the stratum above or below at the same horizontal position. |
+| SUPER+CTRL+HOME | Bring the view back to the window that has keyboard focus. |
+| SUPER+1…9 | Switch to a stratum by its hotkey. |
+| SUPER+scroll | Same as SUPER+LEFT/RIGHT. SUPER+SHIFT+scroll switches stratum. |
+| Three-finger swipe | Horizontal: pan along the row, settling on the step grid when you let go. Vertical: switch stratum. |
+| SUPER+drag on empty space | Pan the view. |
+
+When focus is on empty space, no window has keyboard focus. A window opened then appears in that slot.
+
+Switching strata focuses the window at the same position on the target stratum, or the window last focused there ([Settings › Navigation › Focus after switching stratum](settings#navigation)).
+
+Vertical wrapping (from the last stratum to the first) is on by default; horizontal wrapping is off. With **Wrap only when held**, a wrap needs a held key or a second press at the edge.
+
+## Moving windows
+
+| Keys | Action |
+|---|---|
+| SUPER+SHIFT+LEFT/RIGHT | Move the focused window's column one window step. A window that touches its neighbour stacks into the neighbour's column; a stacked window pops out into its own column on that side. |
+| SUPER+CTRL+SHIFT+LEFT/RIGHT | Move the column by the fine step, without snapping. |
+| SUPER+SHIFT+UP/DOWN | Move the window up or down within its column; at the top or bottom, move it to the stratum above or below at the same horizontal position (stacked into a column there, if one is at that position). |
+| SUPER+SHIFT+1…9 | Move the window to that stratum and follow it. SUPER+SHIFT+ALT+1…9 moves it without following. |
+| Drag with the mouse | Hyprland's normal drag; a tiled window dropped on empty space lands at the drop position. Dragging near a screen edge pans the view. |
+
+## Strata
+
+| Keys | Action |
+|---|---|
+| SUPER+RETURN | Launch the current stratum's app (a terminal by default, or the stratum's own command). The window stays on this stratum regardless of routing. |
+| SUPER+` | Toggle the Games stratum (go there, or back to where you were). |
+
+## Overview
+
+SUPER+TAB opens the overview; SUPER+SHIFT+TAB opens it with the search field focused. Every stratum is shown as a band, labelled with its name and colour.
+
+| Input | Action |
+|---|---|
+| Arrows or H/J/K/L | Move the selection, by the same rules as SUPER+arrows on the desktop. |
+| Enter, or click | Go to the selected window or empty slot. |
+| Esc, right click, SUPER+TAB | Close and return to where you were. |
+| Typing | Search window titles and classes; the first match is selected. Up/Down/Tab cycle through matches. Start with `/` to search for text beginning with H, J, K or L. |
+| Middle click | Close a window. |
+| Drag a stratum name | Reorder the stack. |
+| SHIFT+arrows | Move the selected window, by the SUPER+SHIFT+arrow rules (the view doesn't move). |
+| CTRL+LEFT/RIGHT | Make the selected window's column a fine step narrower or wider. |
+
+### Dragging windows
+
+Drag a tiled window to move it. The live window follows the pointer, the windows it would displace slide aside, and an outline marks where it will land. The drop target depends on what is under the pointer:
+
+| Pointer over | Result |
+|---|---|
+| The middle half of a window | Stack into that window's column: above it in the window's upper half, below it in the lower half. |
+| The left or right quarter of a window | A column of its own, directly before or after that column. |
+| Empty space | A column of its own at that position, flush against a neighbouring column within one window step, otherwise on the window-step grid. |
+
+Drops work on every stratum, including empty ones. Room is made by pushing columns to the right, never to the left; the place the window came from stays empty. Esc or a right click during a drag cancels it. After a drop the overview stays open with the window selected.
+
+Grab a window within a few pixels of its left or right edge to resize its column instead. The width changes in fine steps (from one fine step to a full screen) while you drag; the opposite edge stays put, and columns on the growing side move aside.
+
+Floating windows can't be dragged.
+
+## Preview cross
+
+The cross shows live thumbnails around a centre tile: the areas left and right of the view on the current stratum, and the strata above and below. By default it appears on every navigation and fades out shortly after; [Settings › Preview cross](settings#preview-cross) sets when it appears, where and how large.
+
+## Picture in picture
+
+When you leave a stratum while a video plays in one of its configured players (by default mpv, VLC, Celluloid, Totem and browser video sites on the Media stratum), the player window follows you: it floats, stays on every stratum, moves to a corner and switches its content to fullscreen. Returning to its stratum puts it back in its column. A seek bar under the window controls playback over MPRIS.
+
+Browsers receive the `f` key to make the page's video fill the window, unless another tool handles that (see [Integration](integration#picture-in-picture-handlers)).

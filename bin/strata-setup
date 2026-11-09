@@ -1,0 +1,261 @@
+#!/bin/bash
+# Strata setup: build the hypr-strata Hyprland plugin and connect Strata to
+# your Hyprland config. Nothing outside the plugin folder changes until you
+# run this, and each change to your own files is asked for first.
+#
+#   strata-setup             connect: build, then (asking) hook into hyprland.lua
+#                            and install the optional Omarchy hooks
+#   strata-setup --rebuild   rebuild the plugin (after a Hyprland or Strata
+#                            update) and swap it into the running session
+#   strata-setup --status    one line of JSON: what's built, loaded, connected
+#   strata-setup --remove    disconnect and remove everything setup added
+#                            (--purge also removes your Strata settings, state,
+#                            caches and the wallpapers Strata saved)
+#   --yes                    accept every question (for scripts)
+#   --quiet                  rebuild without output unless it fails
+#
+# Files it writes, all removed again by --remove:
+#   ~/.local/share/strata/            the built plugin (hypr-strata.so) and build files
+#                                     (wallpapers you picked are saved there too, and kept)
+#   ~/.config/hypr/strata.lua         a few lines that load Strata from the plugin folder
+#   ~/.config/hypr/hyprland.lua       one added line at the end (backed up first)
+#   ~/.config/omarchy/hooks/post-update.d/strata-rebuild   (optional)
+#   ~/.config/omarchy/hooks/theme-set.d/60-strata-capture  (optional)
+
+set -uo pipefail
+
+ROOT=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
+PLUGIN_ID=io.github.reflectionist.strata
+DATA="${XDG_DATA_HOME:-$HOME/.local/share}/strata"
+SO="$DATA/hypr-strata.so"
+STAMP="$DATA/build-stamp"
+HYPR="$HOME/.config/hypr"
+HYPRLAND_LUA="$HYPR/hyprland.lua"
+SHIM="$HYPR/strata.lua"
+HOOKS="$HOME/.config/omarchy/hooks"
+UPDATE_HOOK="$HOOKS/post-update.d/strata-rebuild"
+THEME_HOOK="$HOOKS/theme-set.d/60-strata-capture"
+MARK="Written by Strata's setup ($PLUGIN_ID)"
+HOOK_LINE='require("default.hypr.require_optional").module("hypr.strata")'
+
+YES=0 QUIET=0 MODE=connect PURGE=0
+for a in "$@"; do
+  case $a in
+    --yes | -y) YES=1 ;;
+    --quiet | -q) QUIET=1 ;;
+    --rebuild) MODE=rebuild ;;
+    --status) MODE=status ;;
+    --remove) MODE=remove ;;
+    --purge) MODE=remove PURGE=1 ;;
+    -h | --help) sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) echo "strata-setup: unknown option $a (see --help)" >&2; exit 2 ;;
+  esac
+done
+
+say() { ((QUIET)) || echo "$@"; }
+step() { ((QUIET)) || printf '\n\033[1m%s\033[0m\n' "$*"; }
+ask() { # <question> -> yes?
+  ((YES)) && return 0
+  local r
+  read -r -p "$1 [Y/n] " r </dev/tty || return 1
+  [[ -z $r || $r == [Yy]* ]]
+}
+in_session() { [[ -n ${HYPRLAND_INSTANCE_SIGNATURE:-} ]] && hyprctl version >/dev/null 2>&1; }
+loaded() { in_session && hyprctl plugin list 2>/dev/null | grep -q "hypr-strata"; }
+hooked() { [[ -f $HYPRLAND_LUA ]] && grep -q 'hypr\.strata' "$HYPRLAND_LUA"; }
+ours() { [[ -f $1 ]] && grep -q "$MARK" "$1"; }
+
+# What the plugin is built against: the Hyprland headers and Strata's own source.
+build_id() {
+  local hv src
+  hv="$(pkg-config --modversion hyprland 2>/dev/null)-$(stat -c %Y /usr/include/hyprland/src/version.h 2>/dev/null)"
+  src=$(cat "$ROOT"/native/Makefile "$ROOT"/native/src/* 2>/dev/null | sha256sum | cut -c1-16)
+  echo "$hv-$src"
+}
+
+current() { [[ -f $SO && "$(cat "$STAMP" 2>/dev/null)" == "$(build_id)" ]]; }
+bool() { "$@" && echo true || echo false; }
+
+status() {
+  jq -nc --arg root "$ROOT" --arg hyprland "$(pkg-config --modversion hyprland 2>/dev/null)" \
+    --argjson built "$(bool test -f "$SO")" --argjson current "$(bool current)" --argjson loaded "$(bool loaded)" \
+    --argjson connected "$(bool hooked)" --argjson shim "$(bool test -f "$SHIM")" \
+    --argjson updateHook "$(bool test -f "$UPDATE_HOOK")" --argjson themeHook "$(bool test -f "$THEME_HOOK")" \
+    '{root: $root, built: $built, stale: ($built and ($current | not)), loaded: $loaded, connected: $connected,
+      shim: $shim, updateHook: $updateHook, themeHook: $themeHook, hyprland: $hyprland}'
+}
+
+requirements() {
+  local missing=() t
+  for t in g++ make pkg-config jq; do command -v "$t" >/dev/null || missing+=("$t"); done
+  if ((${#missing[@]})); then
+    echo "Missing: ${missing[*]}. Install them with: omarchy pkg add base-devel pkgconf jq" >&2
+    return 1
+  fi
+  if ! pkg-config --exists hyprland || [[ ! -f /usr/include/hyprland/src/version.h ]]; then
+    echo "Hyprland's development headers aren't installed (they come with the hyprland package)." >&2
+    return 1
+  fi
+  if [[ ! -f $HYPRLAND_LUA ]]; then
+    echo "No ~/.config/hypr/hyprland.lua: Strata needs Hyprland 0.56+ with the Lua config (Omarchy 4)." >&2
+    return 1
+  fi
+}
+
+build() {
+  step "Building the Hyprland plugin (about a minute)"
+  mkdir -p "$DATA"
+  local log="$DATA/build.log"
+  if make -C "$ROOT/native" BUILD="$DATA/build" PREFIX="$DATA" install >"$log" 2>&1; then
+    build_id >"$STAMP"
+    say "  built $SO"
+  else
+    echo "Build failed; the last lines of $log:" >&2
+    tail -20 "$log" >&2
+    return 1
+  fi
+}
+
+# Back up and edit a file in place, keeping a symlinked dotfile a symlink.
+edit_file() { # <file> <command reading the old text on stdin, writing the new>
+  local f real tmp
+  f=$1
+  shift
+  real=$(readlink -f "$f")
+  cp -p "$real" "$real.bak.strata-$(date +%Y%m%d-%H%M%S)" || return 1
+  tmp=$(mktemp "$real.XXXXXX") || return 1
+  if "$@" <"$real" >"$tmp"; then
+    chmod --reference="$real" "$tmp"
+    mv -f "$tmp" "$real"
+  else
+    rm -f "$tmp"
+    return 1
+  fi
+}
+
+write_shim() {
+  cat >"$SHIM" <<EOF
+-- $MARK.
+-- Loads Strata from its Omarchy plugin folder; does nothing if it's gone.
+-- hyprland.lua requires this last (strata-setup --remove takes both away).
+local root = "$ROOT"
+local file = root .. "/lua/strata.lua"
+local f = io.open(file, "r")
+if not f then
+  return nil
+end
+f:close()
+local strata = assert(loadfile(file))(root)
+strata.setup()
+return strata
+EOF
+}
+
+connect() {
+  requirements || exit 1
+  if current; then
+    say "The Hyprland plugin is built and current."
+  else
+    build || exit 1
+  fi
+
+  step "Loading Strata from your Hyprland config"
+  if [[ -f $SHIM ]] && ! ours "$SHIM"; then
+    say "  ~/.config/hypr/strata.lua exists and isn't Strata's."
+    ask "  Replace it (a backup is kept)?" || { echo "Stopped: nothing in your config was changed." >&2; exit 1; }
+    cp -p "$SHIM" "$SHIM.bak.strata-$(date +%Y%m%d-%H%M%S)"
+  fi
+  write_shim
+  say "  ~/.config/hypr/strata.lua loads $ROOT/lua/strata.lua"
+
+  if hooked; then
+    say "  hyprland.lua already loads Strata"
+  else
+    say "  hyprland.lua needs one line at its end (after everything Strata's keys and layout must override):"
+    say "      $HOOK_LINE"
+    if ask "  Add it (hyprland.lua is backed up first)?"; then
+      edit_file "$HYPRLAND_LUA" sh -c 'cat; printf "\n-- Strata (Omarchy plugin %s): keep this last.\n%s\n" "$1" "$2"' _ "$PLUGIN_ID" "$HOOK_LINE" ||
+        { echo "Couldn't edit hyprland.lua: nothing was changed." >&2; exit 1; }
+      say "  added"
+    else
+      say "  skipped: Strata stays off until that line is in hyprland.lua"
+    fi
+  fi
+
+  step "Optional Omarchy hooks"
+  if [[ -f $UPDATE_HOOK ]]; then
+    say "  rebuild after Omarchy updates: on"
+  elif ask "  Rebuild the plugin automatically after Omarchy updates Hyprland?"; then
+    mkdir -p "$(dirname "$UPDATE_HOOK")"
+    printf '#!/bin/bash\n# %s.\n[ -x "%s/bin/strata-setup" ] && exec "%s/bin/strata-setup" --rebuild --quiet\nexit 0\n' "$MARK" "$ROOT" "$ROOT" >"$UPDATE_HOOK"
+    chmod +x "$UPDATE_HOOK"
+    say "  added ~/.config/omarchy/hooks/post-update.d/strata-rebuild"
+  fi
+  if [[ -f $THEME_HOOK ]]; then
+    say "  per-stratum themes from the theme picker: on"
+  elif ask "  Let a theme picked with Omarchy's theme picker belong to the stratum you're on?"; then
+    mkdir -p "$(dirname "$THEME_HOOK")"
+    printf '#!/bin/bash\n# %s.\n[ -x "%s/bin/strata-capture" ] && exec "%s/bin/strata-capture" theme "$1"\nexit 0\n' "$MARK" "$ROOT" "$ROOT" >"$THEME_HOOK"
+    chmod +x "$THEME_HOOK"
+    say "  added ~/.config/omarchy/hooks/theme-set.d/60-strata-capture"
+  fi
+
+  if in_session && hooked; then
+    step "Starting Strata"
+    if loaded; then
+      "$ROOT/bin/strata-swap" "$SO" >/dev/null
+    else
+      hyprctl reload >/dev/null
+    fi
+    sleep 1
+    loaded && say "  running" || say "  not running yet: see Strata settings > Setup, or $DATA/build.log"
+  fi
+  say ""
+  say "Done. Settings: click the Strata glyph in the bar. Undo: $ROOT/bin/strata-setup --remove"
+}
+
+rebuild() {
+  requirements || exit 1
+  current && ((QUIET)) && exit 0
+  build || {
+    command -v omarchy-notification-send >/dev/null &&
+      omarchy-notification-send "Strata" "Rebuilding its Hyprland plugin failed: see $DATA/build.log" -u critical >/dev/null 2>&1
+    exit 1
+  }
+  if loaded; then
+    "$ROOT/bin/strata-swap" "$SO" >/dev/null && say "  swapped into the running session"
+  elif in_session && hooked; then
+    hyprctl reload >/dev/null
+  fi
+}
+
+remove() {
+  say "This disconnects Strata: removes the hyprland.lua line, ~/.config/hypr/strata.lua,"
+  say "the Omarchy hooks and the built plugin.$( ((PURGE)) && echo ' Also your Strata settings (~/.config/strata), its state, caches and saved wallpapers.')"
+  ask "Continue?" || exit 1
+  # Exactly the two lines connect added (the marker comment and the require).
+  if grep -qxF "$HOOK_LINE" "$HYPRLAND_LUA" 2>/dev/null; then
+    edit_file "$HYPRLAND_LUA" awk -v line="$HOOK_LINE" '$0 == line || /^-- Strata \(Omarchy plugin / { next } { print }' &&
+      say "  hyprland.lua: line removed (backup kept)"
+  elif hooked; then
+    say "  hyprland.lua loads Strata in a way setup didn't write: remove those lines yourself."
+  fi
+  ours "$SHIM" && rm -f "$SHIM" && say "  removed ~/.config/hypr/strata.lua"
+  for h in "$UPDATE_HOOK" "$THEME_HOOK"; do ours "$h" && rm -f "$h" && say "  removed ${h/#$HOME/\~}"; done
+  # The config no longer asks for the plugin, so this reload unloads it.
+  in_session && hyprctl reload >/dev/null 2>&1
+  rm -rf "$DATA/build" "$SO" "$STAMP" "$DATA/build.log" && say "  removed the built plugin"
+  if ((PURGE)); then
+    rm -rf "$DATA" "$HOME/.config/strata" "$HOME/.local/state/strata" "$HOME/.cache/strata" &&
+      say "  removed settings, state, caches and saved wallpapers"
+  fi
+  say ""
+  say "Strata is disconnected. To remove the shell plugin too: omarchy plugin remove $PLUGIN_ID"
+}
+
+case $MODE in
+  connect) connect ;;
+  rebuild) rebuild ;;
+  status) status ;;
+  remove) remove ;;
+esac

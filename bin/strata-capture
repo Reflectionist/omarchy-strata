@@ -1,0 +1,96 @@
+#!/bin/bash
+# Save a theme or wallpaper you picked with Omarchy's own pickers to the
+# stratum you're on (Strata's theme-set hook and wallpaper watch call this).
+# Strata's own switches are left alone. The first pick on a stratum also
+# freezes what was there before as the base for strata without their own,
+# so they don't all follow along.
+#
+#   strata-capture theme <name>
+#   strata-capture wallpaper <new path> <previous path>
+
+set -uo pipefail
+export PATH="/usr/bin:$HOME/.local/bin:${OMARCHY_PATH:-/usr/share/omarchy}/bin:$PATH"
+
+BIN=$(dirname "$(readlink -f "$0")")
+CFG="$HOME/.config/strata"
+DEFAULTS="$BIN/../config/defaults.json"
+RT="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+MARK="$RT/strata-theme-switching"
+
+# Theme switching off: one theme and wallpaper for every stratum, nothing to
+# save. Strata only redraws what it shows: Omarchy's current wallpaper (when
+# parallax or a sliding transition has it drawing), or with a wallpaper per
+# stratum, the picked one on the stratum you're on and the theme's others on
+# the rest.
+if [[ $(jq -rs '(.[0] * (.[1] // {})).themes.switching' "$DEFAULTS" "$CFG/strata.json" 2>/dev/null) == false ]]; then
+  hyprctl eval 'require("hypr.strata").wallpaper_picked()' >/dev/null 2>&1
+  exit 0
+fi
+
+# One of ours (a stratum's theme being switched in, or what its hooks set off)?
+if [[ -f $MARK ]] && (($(date +%s) - $(cat "$MARK" 2>/dev/null || echo 0) < 12)); then
+  exit 0
+fi
+
+# The stratum you're on: a themed one by its workspace, else the free block.
+ws=$(hyprctl activeworkspace -j 2>/dev/null) || exit 0
+key=$(jq -rs --argjson ws "$ws" '
+  (.[0] * (.[1] // {})) as $c
+  | ($c.strata // {} | to_entries
+     | map(select(.value.workspace == ("name:" + $ws.name) or .value.workspace == ($ws.id | tostring)))
+     | first | .key) // (if $ws.id > 0 then "@free" else empty end)
+' "$DEFAULTS" "$CFG/strata.json" 2>/dev/null)
+[[ -n $key && $key != null ]] || exit 0
+
+path=$( [[ $key == @free ]] && echo '["free"]' || jq -cn --arg k "$key" '["strata", $k]')
+
+# Pictures under current/theme/backgrounds change with every theme switch:
+# point at where the theme keeps them, or keep a copy of our own.
+stable() { # <path>
+  local p="$1" name theme d
+  [[ -z $p ]] && return
+  case "$p" in
+    "$HOME/.local/state/omarchy/current/"*)
+      name=${p##*/}
+      theme=$(cat "$HOME/.local/state/omarchy/current/theme.name" 2>/dev/null)
+      for d in "$HOME/.config/omarchy/backgrounds/$theme" "$HOME/.config/omarchy/themes/$theme/backgrounds" \
+               "${OMARCHY_PATH:-/usr/share/omarchy}/themes/$theme/backgrounds"; do
+        [[ -f $d/$name ]] && { echo "$d/$name"; return; }
+      done
+      mkdir -p "$HOME/.local/share/strata/wallpapers"
+      cp -f "$(readlink -f "$p")" "$HOME/.local/share/strata/wallpapers/$name" 2>/dev/null &&
+        { echo "$HOME/.local/share/strata/wallpapers/$name"; return; }
+      ;;
+  esac
+  echo "$p"
+}
+
+edit() { # <jq program> [args...]
+  local tmp="$CFG/strata.json.tmp"
+  jq "$@" "$CFG/strata.json" >"$tmp" && mv -f "$tmp" "$CFG/strata.json"
+}
+
+case "${1:-}" in
+  theme)
+    name="${2:?}"
+    prev=$(cat "$RT/strata-theme-current" 2>/dev/null)
+    edit --argjson p "$path" --arg v "$name" --arg prev "$prev" '
+      setpath($p + ["theme"]; $v)
+      | if ((.themes.base // null) == null and $prev != "" and $prev != $v) then .themes.base = $prev else . end'
+    echo "$name" >"$RT/strata-theme-current"
+    "$BIN/strata-theme" cache "$name"
+    ;;
+  wallpaper)
+    new=$(stable "${2:?}") old=$(stable "${3:-}")
+    edit --argjson p "$path" --arg v "$new" --arg old "$old" '
+      setpath($p + ["wallpaper"]; $v)
+      | if ((.themes.base_wallpaper // null) == null and $old != "" and $old != $v) then .themes.base_wallpaper = $old else . end'
+    ;;
+  *)
+    echo "usage: strata-capture theme <name> | wallpaper <new> <old>" >&2
+    exit 2
+    ;;
+esac
+
+# Hyprland re-reads strata.json (wallpapers, themes per stratum).
+hyprctl reload >/dev/null 2>&1
