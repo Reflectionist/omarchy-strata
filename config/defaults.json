@@ -173,11 +173,12 @@
     "view_step": 0.5,
     "fine_step": 0.125,
     "jump_near": 2,
-    "margin": 4,
+    "margin": 0,
     "wrap_vertical": true,
     "wrap_horizontal": false,
     "wrap_hold": false,
     "land_focus": "grid",
+    "land_past": "blank",
     "close_gap": false
   },
   "keys": {
@@ -196,7 +197,7 @@
     "fade_ms": 800,
     "size": 0.16
   },
-  "overview": { "search_on_shift": true },
+  "overview": { "search_on_shift": true, "letters": "search" },
   "themes": {
     "switching": true,
     "auto_wallpapers": false,

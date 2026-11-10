@@ -46,9 +46,9 @@ Item {
         NumberField { from: 0; to: 20; value: page.n("jump_near", 2); onModified: function(v) { page.setn("jump_near", v) } }
       }
       SettingRow {
-        label: "Travel margin"
-        description: "How far focus can move past the outermost window, in focus steps."
-        NumberField { from: 0; to: 40; value: page.n("margin", 4); onModified: function(v) { page.setn("margin", v) } }
+        label: "Blank space past the outermost windows"
+        description: "How far focus and the view can go past the leftmost and rightmost window on any stratum, in focus steps. At 0 there is no space there until a window is opened, moved or widened into it."
+        NumberField { from: 0; to: 8; value: page.n("margin", 0); onModified: function(v) { page.setn("margin", v) } }
       }
 
       PanelSectionHeader { text: "Wrapping"; Layout.topMargin: 14 }
@@ -69,6 +69,7 @@ Item {
       PanelSectionHeader { text: "Behavior"; Layout.topMargin: 14 }
       SettingRow {
         label: "Focus after switching stratum"
+        controlWidth: 400
         ButtonGroup {
           options: [{ value: "grid", label: "Window at the same position" }, { value: "last", label: "Last focused window" }]
           value: page.n("land_focus", "grid")
@@ -76,7 +77,18 @@ Item {
         }
       }
       SettingRow {
+        label: "Landing past a stratum's windows"
+        description: "Switching to a stratum whose windows are all off to one side of the view."
+        controlWidth: 400
+        ButtonGroup {
+          options: [{ value: "blank", label: "Stay on blank" }, { value: "nearest", label: "Nearest window" }]
+          value: page.n("land_past", "blank")
+          onChanged: function(v) { page.setn("land_past", v) }
+        }
+      }
+      SettingRow {
         label: "When a column closes"
+        controlWidth: 400
         ButtonGroup {
           options: [{ value: "keep", label: "Leave empty space" }, { value: "close", label: "Shift later columns left" }]
           value: page.n("close_gap", false) ? "close" : "keep"

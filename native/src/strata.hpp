@@ -83,6 +83,7 @@ namespace Strata {
         SP<Config::Values::CBoolValue>   wrap;        // horizontal wrap at the travel limits
         SP<Config::Values::CBoolValue>   closeGap;    // closing a window pulls the columns to its right in
         SP<Config::Values::CStringValue> landFocus;   // switching strata: "grid" (window under the view) or "last"
+        SP<Config::Values::CStringValue> landPast;    // landing past a stratum's windows: "blank" (stay) or "nearest"
         SP<Config::Values::CStringValue> crossTrigger;   // move | held | change | hold | off
         SP<Config::Values::CStringValue> crossPlacement; // bottom | center | topleft
         SP<Config::Values::CFloatValue>  crossSize;      // centre tile width, fraction of the screen
@@ -177,6 +178,9 @@ namespace Strata {
     void                           recalcMonitor(MONITORID id, bool animate = true);
     void                           fitSlot(SView& v, double x, double w);
     std::pair<double, double>      bounds(MONITORID id);
+    std::pair<double, double>      travel(MONITORID id); // bounds plus the margin: where focus and the camera can go
+    void                           keepInSpan(MONITORID id, bool closingOverview = false);
+    bool                           draggingTiled();
     double                         slotWidth();
     void                           setCursorTo(CStrataAlgorithm* a, const SP<SColumnData>& c);
     void                           focusWindow(PHLWINDOW w);
@@ -185,7 +189,7 @@ namespace Strata {
 
     std::string                    nav(int dir, bool forceWrap);
     std::string                    home();
-    std::string                    pan(double du);
+    std::string                    pan(double du, double extra = 0.0);
     std::string                    settle();
     std::string                    land(int hint);
     std::string                    aim(double x, double w = 0.0);
@@ -193,6 +197,21 @@ namespace Strata {
     bool                           widenWindow(PHLWINDOW w, int dir);
     void                           expect(const std::string& address, CStrataAlgorithm::SExpect e);
     std::optional<CStrataAlgorithm::SExpect> takeExpect(PHLWINDOW w);
+
+    // Window widths per stratum (workspace name -> column width), for windows
+    // that open there. A window still opening when Lua routes it elsewhere
+    // (opening()) counts as opening where it arrives.
+    inline std::unordered_map<std::string, double> g_widths;
+    void                           opening(const std::string& address);
+    bool                           firstPlacement(PHLWINDOW w);
+    void                           markExisting();
+
+    // Work for after the current event (Hyprland's own focus choice, a switch
+    // settling). Not the event loop's doLater: a callback still queued there
+    // when the plugin unloads (a hot swap: every window leaves the layout)
+    // runs code that's gone. These run from a timer removed on unload.
+    void                           afterEvent(std::function<void()> fn);
+    void                           afterEventCleanup();
 
     void                           onFocus(PHLWINDOW w, Desktop::eFocusReason reason);
     void                           onFullscreen(PHLWINDOW w);

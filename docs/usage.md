@@ -15,7 +15,7 @@ Distances below are in **steps**, set in [Settings › Navigation](settings#navi
 
 | Keys | Action |
 |---|---|
-| SUPER+LEFT/RIGHT | Focus the next window in that direction if it is within the jump distance; otherwise move one focus step into empty space. Past the outermost window, focus continues into empty space up to the travel margin. |
+| SUPER+LEFT/RIGHT | Focus the next window in that direction if it is within the jump distance; otherwise move one focus step into empty space. Focus stops at the leftmost and rightmost window on any stratum (plus the blank-space margin, 0 by default). |
 | SUPER+UP/DOWN | Focus the window above or below in the same column; at the top or bottom of the column, switch to the stratum above or below at the same horizontal position. |
 | SUPER+CTRL+HOME | Bring the view back to the window that has keyboard focus. |
 | SUPER+1…9 | Switch to a stratum by its hotkey. |
@@ -25,7 +25,9 @@ Distances below are in **steps**, set in [Settings › Navigation](settings#navi
 
 When focus is on empty space, no window has keyboard focus. A window opened then appears in that slot.
 
-Switching strata focuses the window at the same position on the target stratum, or the window last focused there ([Settings › Navigation › Focus after switching stratum](settings#navigation)).
+All strata share one horizontal span: from the leftmost to the rightmost window on any of them. There is no empty space past it until a window is opened, moved or widened there; the view, swipes, SUPER+scroll and SUPER+drag stop at its ends. When it shrinks under you (the outermost window closes, moves away or moves in), the view goes to the nearest window. [Settings › Navigation › Blank space past the outermost windows](settings#navigation) brings back room to travel past it.
+
+Switching strata focuses the window at the same position on the target stratum, or the window last focused there ([Settings › Navigation › Focus after switching stratum](settings#navigation)). Where the target stratum has no window at that position because all of its windows are off to one side, you land on empty space, or on its nearest window with **Landing past a stratum's windows** set to Nearest window.
 
 Vertical wrapping (from the last stratum to the first) is on by default; horizontal wrapping is off. With **Wrap only when held**, a wrap needs a held key or a second press at the edge.
 
@@ -37,7 +39,8 @@ Vertical wrapping (from the last stratum to the first) is on by default; horizon
 | SUPER+CTRL+SHIFT+LEFT/RIGHT | Move the column by the fine step, without snapping. |
 | SUPER+SHIFT+UP/DOWN | Move the window up or down within its column; at the top or bottom, move it to the stratum above or below at the same horizontal position (stacked into a column there, if one is at that position). |
 | SUPER+SHIFT+1…9 | Move the window to that stratum and follow it. SUPER+SHIFT+ALT+1…9 moves it without following. |
-| Drag with the mouse | Hyprland's normal drag; a tiled window dropped on empty space lands at the drop position. Dragging near a screen edge pans the view. |
+| Drag with the mouse | Hyprland's normal drag; a tiled window dropped on empty space lands at the drop position. Dragging near a screen edge pans the view, up to a screen past the outermost windows. |
+| SUPER+right drag, Omarchy's resize keys | Change the column's width, from a twentieth of a screen up to a full screen. It grows into empty space and pushes columns on that side along. Resizing from the keyboard keeps the window in view. |
 
 ## Strata
 
@@ -52,10 +55,10 @@ SUPER+TAB opens the overview; SUPER+SHIFT+TAB opens it with the search field foc
 
 | Input | Action |
 |---|---|
-| Arrows or H/J/K/L | Move the selection, by the same rules as SUPER+arrows on the desktop. |
+| Arrows | Move the selection, by the same rules as SUPER+arrows on the desktop. H/J/K/L too, with [Settings › Overview › Letter keys](settings#overview) set to Move with HJKL. |
 | Enter, or click | Go to the selected window or empty slot. |
 | Esc, right click, SUPER+TAB | Close and return to where you were. |
-| Typing | Search window titles and classes; the first match is selected. Up/Down/Tab cycle through matches. Start with `/` to search for text beginning with H, J, K or L. |
+| Typing | Search window titles and classes; the first match is selected. Up/Down/Tab cycle through matches. With the letter keys moving the selection (HJKL), press `/` first. |
 | Middle click | Close a window. |
 | Drag a stratum name | Reorder the stack. |
 | SHIFT+arrows | Move the selected window, by the SUPER+SHIFT+arrow rules (the view doesn't move). |
@@ -71,7 +74,7 @@ Drag a tiled window to move it. The live window follows the pointer, the windows
 | The left or right quarter of a window | A column of its own, directly before or after that column. |
 | Empty space | A column of its own at that position, flush against a neighbouring column within one window step, otherwise on the window-step grid. |
 
-Drops work on every stratum, including empty ones. Room is made by pushing columns to the right, never to the left; the place the window came from stays empty. Esc or a right click during a drag cancels it. After a drop the overview stays open with the window selected.
+Drops work on every stratum, including empty ones. While you drag, the bands make room past the outermost windows, so a window can be dropped beyond them. Room is made by pushing columns to the right, never to the left; the place the window came from stays empty. Esc or a right click during a drag cancels it. After a drop the overview stays open with the window selected.
 
 Grab a window within a few pixels of its left or right edge to resize its column instead. The width changes in fine steps (from one fine step to a full screen) while you drag; the opposite edge stays put, and columns on the growing side move aside.
 

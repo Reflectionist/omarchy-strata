@@ -10,7 +10,9 @@
 #include <hyprland/src/desktop/Workspace.hpp>
 #include <hyprland/src/desktop/state/WindowState.hpp>
 #include <hyprland/src/desktop/view/Window.hpp>
+#include <hyprland/src/layout/LayoutManager.hpp>
 #include <hyprland/src/layout/algorithm/Algorithm.hpp>
+#include <hyprland/src/layout/supplementary/DragController.hpp>
 #include <hyprland/src/layout/space/Space.hpp>
 #include <hyprland/src/managers/EventManager.hpp>
 #include <hyprland/src/managers/eventLoop/EventLoopManager.hpp>
@@ -164,6 +166,30 @@ namespace Strata {
         return {lo, hi};
     }
 
+    // Where focus and the camera can go: the span of every stratum's windows
+    // on the monitor (one shared axis), plus the margin past it (0 by default:
+    // no space beyond the outermost windows until one is opened, moved or
+    // widened there).
+    std::pair<double, double> travel(MONITORID id) {
+        const auto [LO, HI] = bounds(id);
+        const double M      = g_cfg.margin->value() * std::max(0.01, (double)g_cfg.viewStep->value());
+        return {LO - M, HI + M};
+    }
+
+    // The camera's range for a travel range: the screen shows none of the
+    // space past it that it doesn't have to (all of a range narrower than
+    // the screen is on it).
+    static std::pair<double, double> cameraRange(double lo, double hi) {
+        return {std::min(lo, hi - 1.0), std::max(lo, hi - 1.0)};
+    }
+
+    bool draggingTiled() {
+        if (!g_layoutManager)
+            return false;
+        const auto& DRAG = g_layoutManager->dragController();
+        return DRAG && DRAG->target() && DRAG->draggingTiled();
+    }
+
     double slotWidth() {
         static const auto PCOLWIDTH = CConfigValue<Config::FLOAT>("scrolling:column_width");
         const double      W         = g_cfg.slotWidth->value();
@@ -298,16 +324,18 @@ namespace Strata {
         if (cand && ((dir > 0 && NL + NW > a->xOf(cand) + EPS) || (dir < 0 && NL < a->xOf(cand) + a->effW(cand) - EPS)))
             return goTo(a, cand, FW);
 
-        const auto [LO, HI] = bounds(MON->m_id);
-        const double M      = g_cfg.margin->value() * VSTEP;
-        if (NL < LO - M - EPS || NL + NW > HI + M + EPS) {
+        // Past the travel range is the edge; but a step back towards it always
+        // goes (the range can shrink under a blank spot out there).
+        const auto [LO, HI] = travel(MON->m_id);
+        const auto outside  = [LO, HI](double x, double w) { return std::max({LO - x, x + w - HI, 0.0}); };
+        if (outside(NL, NW) > EPS && outside(NL, NW) >= outside(L, R - L) - EPS) {
             if (!(g_cfg.wrap->value() || forceWrap)) {
                 crossPoke("edge");
                 return "edge";
             }
             if (!cols.empty())
                 return goTo(a, dir > 0 ? cols.front() : cols.back(), FW);
-            v.cursorX = dir > 0 ? LO - M : HI + M - NW;
+            v.cursorX = dir > 0 ? LO : HI - NW;
         } else
             v.cursorX = NL;
 
@@ -357,15 +385,18 @@ namespace Strata {
         return "window";
     }
 
-    std::string pan(double du) {
+    // Scroll the camera by du, within the travel range (extra: that much
+    // further, for carrying a dragged window past the outermost ones). A
+    // camera already outside it can stay, but not go further out.
+    std::string pan(double du, double extra) {
         PHLMONITOR MON;
         auto*      a = activeStrata(&MON);
         if (!a)
             return "none";
-        auto&        v       = a->view();
-        const auto [LO, HI]  = bounds(MON->m_id);
-        const double M       = g_cfg.margin->value() * std::max(0.01, (double)g_cfg.viewStep->value());
-        v.camera             = std::clamp(v.camera + du, std::min(LO - M, v.camera), std::max(HI + M - 1.0, v.camera));
+        auto&      v        = a->view();
+        const auto [LO, HI] = travel(MON->m_id);
+        const auto [C0, C1] = cameraRange(LO - extra, HI + extra);
+        v.camera            = std::clamp(v.camera + du, std::min(C0, v.camera), std::max(C1, v.camera));
         recalcMonitor(MON->m_id);
         emit();
         crossPoke("pan");
@@ -415,6 +446,15 @@ namespace Strata {
                 bestO = O;
                 best  = c;
             }
+        }
+
+        // Past all of this stratum's windows (not in a gap between them),
+        // with "nearest": its nearest window, the view going along.
+        if (const auto& cols = a->m_scrollingData->columns; !best && !cols.empty() && g_cfg.landPast->value() == std::string{"nearest"}) {
+            if (v.cursorX >= a->xOf(cols.back()) + a->effW(cols.back()) - EPS)
+                best = cols.back();
+            else if (v.cursorX + v.cursorW <= a->xOf(cols.front()) + EPS)
+                best = cols.front();
         }
 
         if (best) {
@@ -541,6 +581,111 @@ namespace Strata {
         return true;
     }
 
+    // The travel range shrank under the view (a window closed, left, moved in
+    // or got narrower, on any stratum): a blank spot that's now past it goes
+    // to the nearest window on its stratum, and the camera comes back in so
+    // the screen shows no space past the edges that it doesn't have to.
+    void keepInSpan(MONITORID id, bool closingOverview) {
+        PHLMONITOR MON;
+        auto*      a = activeStrata(&MON);
+        if (!a || MON->m_id != id || (!closingOverview && overviewOpen(id)) || draggingTiled())
+            return;
+        auto& v = a->view();
+        if (v.inhibited || v.fsReturn)
+            return;
+        a->normalize();
+        const auto [LO, HI] = travel(id);
+        const auto& cols    = a->m_scrollingData->columns;
+
+        if (v.blank && (v.cursorX < LO - EPS || v.cursorX + v.cursorW > HI + EPS)) {
+            SP<SColumnData> near;
+            double          best = INFINITY;
+            for (const auto& c : cols) {
+                const double X = a->xOf(c), E = X + a->effW(c);
+                const double D = std::max({0.0, X - (v.cursorX + v.cursorW), v.cursorX - E});
+                if (D < best) {
+                    best = D;
+                    near = c;
+                }
+            }
+            if (near)
+                goTo(a, near, nullptr);
+            else // an empty stratum: the blank slot comes back inside
+                v.cursorX = std::clamp(v.cursorX, LO, std::max(LO, HI - v.cursorW));
+        }
+
+        const auto [C0, C1] = cameraRange(LO, HI);
+        const double CAM    = std::clamp(v.camera, C0, C1);
+        if (std::abs(CAM - v.camera) < EPS)
+            return;
+        v.camera = CAM;
+        recalcMonitor(id);
+        emit();
+    }
+
+    static wl_event_source*                   g_afterTimer = nullptr;
+    static std::vector<std::function<void()>> g_after;
+    static bool                               g_unloading = false;
+
+    static int onAfter(void*) {
+        auto jobs = std::move(g_after);
+        g_after.clear();
+        for (auto& job : jobs)
+            job();
+        return 0;
+    }
+
+    void afterEvent(std::function<void()> fn) {
+        if (g_unloading || !g_pCompositor || !g_pCompositor->m_wlEventLoop)
+            return;
+        if (!g_afterTimer)
+            g_afterTimer = wl_event_loop_add_timer(g_pCompositor->m_wlEventLoop, onAfter, nullptr);
+        if (!g_afterTimer)
+            return;
+        g_after.push_back(std::move(fn));
+        wl_event_source_timer_update(g_afterTimer, 1);
+    }
+
+    // First thing on unload: nothing queued runs, and nothing more queues
+    // (removing the layout takes every window out of it).
+    void afterEventCleanup() {
+        g_unloading = true;
+        if (g_afterTimer) {
+            wl_event_source_remove(g_afterTimer);
+            g_afterTimer = nullptr;
+        }
+        g_after.clear();
+    }
+
+    // Windows already placed once: their next arrival on a stratum is a move,
+    // not an opening (which gets that stratum's window width).
+    static std::vector<WP<Desktop::View::CWindow>> g_placed;
+    static std::unordered_set<std::string>         g_opening;
+
+    void opening(const std::string& address) {
+        g_opening.insert(address);
+    }
+
+    bool firstPlacement(PHLWINDOW w) {
+        if (!w)
+            return false;
+        std::erase_if(g_placed, [](const auto& p) { return p.expired(); });
+        const bool SEEN   = std::ranges::any_of(g_placed, [&w](const auto& p) { return p.lock() == w; });
+        const bool MARKED = g_opening.erase(addressOf(w)) > 0;
+        if (!SEEN)
+            g_placed.emplace_back(w);
+        return !SEEN || MARKED;
+    }
+
+    // At load: every window that exists is already placed (a hot swap re-adds
+    // them all; that isn't them opening).
+    void markExisting() {
+        g_placed.clear();
+        g_opening.clear();
+        for (const auto& w : Desktop::windowState()->windows())
+            g_placed.emplace_back(w);
+    }
+
     void expect(const std::string& address, CStrataAlgorithm::SExpect e) {
         g_expect[address] = e;
     }
@@ -584,7 +729,7 @@ namespace Strata {
             const double X = a->xOf(C), W = a->effW(C);
             if (X + W <= v.camera + EPS || X >= v.camera + 1.0 - EPS) {
                 v.blank = true;
-                g_pEventLoopManager->doLater([] {
+                afterEvent([] {
                     if (auto* b = activeStrata(); b && b->view().blank)
                         unfocus();
                     emit();
@@ -643,6 +788,6 @@ namespace Strata {
         const int HINT = v.landHint;
         v.landHint     = 0;
         // After Hyprland has picked its own focus for the switch.
-        g_pEventLoopManager->doLater([HINT] { land(HINT); });
+        afterEvent([HINT] { land(HINT); });
     }
 }

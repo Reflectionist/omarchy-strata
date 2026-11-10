@@ -10,8 +10,9 @@ import qs.Commons as Commons
 // layer names the strata, shows the selection and search, and turns clicks,
 // drags and keys into lua/strata.lua calls.
 //
-//   arrows / HJKL  move the selection (windows and blank spots), by the
-//                  same rules as SUPER+arrows on the desktop
+//   arrows         move the selection (windows and blank spots), by the
+//                  same rules as SUPER+arrows on the desktop (HJKL too, with
+//                  the "letters" setting on hjkl; "/" then starts a search)
 //   Enter / click  go there            Esc / SUPER+TAB  close, back where you were
 //   drag a window  onto a window: stack into its column; to its sides: in
 //                  beside it; blank: right there; any stratum. Hyprland draws
@@ -74,6 +75,9 @@ PanelWindow {
   readonly property real slotW: grid.sw || 0.5
   readonly property real nearW: grid.near !== undefined ? grid.near : 2 * vstep
   readonly property var nav: (state.config && state.config.navigation) || ({})
+  // Letter keys: "search" (typing searches; arrows move) or "hjkl" (HJKL
+  // move too; "/" starts a search).
+  readonly property bool hjkl: ((state.config && state.config.overview) || {}).letters === "hjkl"
   function gridX(px) { return grid.u0 + ((px - grid.ox) / grid.s - grid.gutter) / grid.uw }
   function screenX(u) { return grid.ox + (grid.gutter + (u - grid.u0) * grid.uw) * grid.s }
   function rowAt(py) {
@@ -683,10 +687,10 @@ PanelWindow {
         else if ((arrow === "l" || arrow === "r") && (k.modifiers & Qt.ControlModifier)) { ov.widenSel(arrow === "r" ? 1 : -1); k.accepted = true }
         else if (k.key === Qt.Key_Escape) { ov.close(); k.accepted = true }
         else if (k.key === Qt.Key_Return || k.key === Qt.Key_Enter) { ov.go(); k.accepted = true }
-        else if (k.key === Qt.Key_Left || k.key === Qt.Key_H) { ov.moveH(-1); k.accepted = true }
-        else if (k.key === Qt.Key_Right || k.key === Qt.Key_L) { ov.moveH(1); k.accepted = true }
-        else if (k.key === Qt.Key_Up || k.key === Qt.Key_K) { ov.moveV(-1); k.accepted = true }
-        else if (k.key === Qt.Key_Down || k.key === Qt.Key_J) { ov.moveV(1); k.accepted = true }
+        else if (k.key === Qt.Key_Left || (ov.hjkl && k.key === Qt.Key_H && !(k.modifiers & ~Qt.KeypadModifier))) { ov.moveH(-1); k.accepted = true }
+        else if (k.key === Qt.Key_Right || (ov.hjkl && k.key === Qt.Key_L && !(k.modifiers & ~Qt.KeypadModifier))) { ov.moveH(1); k.accepted = true }
+        else if (k.key === Qt.Key_Up || (ov.hjkl && k.key === Qt.Key_K && !(k.modifiers & ~Qt.KeypadModifier))) { ov.moveV(-1); k.accepted = true }
+        else if (k.key === Qt.Key_Down || (ov.hjkl && k.key === Qt.Key_J && !(k.modifiers & ~Qt.KeypadModifier))) { ov.moveV(1); k.accepted = true }
         else if (k.key === Qt.Key_Slash) { searchField.forceActiveFocus(); k.accepted = true }
         else if (k.text !== "" && k.text.charCodeAt(0) > 32 && !(k.modifiers & (Qt.ControlModifier | Qt.MetaModifier))) {
           searchField.forceActiveFocus()

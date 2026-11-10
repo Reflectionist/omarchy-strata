@@ -114,7 +114,7 @@ namespace Strata {
         const float DT = g_lastPush == Time::steady_tp{} ? 0.F : std::min(0.1F, std::chrono::duration<float>(NOW - g_lastPush).count());
         g_lastPush     = NOW;
         if (DT > 0.F)
-            pan(dir * 0.66 * DT);
+            pan(dir * 0.66 * DT, 1.0); // up to a screen past the outermost windows: room to drop it there
         g_pHyprRenderer->damageMonitor(mon);
         mon->scheduleFrame(Aquamarine::IOutput::AQ_SCHEDULE_ANIMATION);
         return true;

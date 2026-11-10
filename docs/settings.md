@@ -78,11 +78,12 @@ When more than one stratum matches a window, an exact app rule beats an app cate
 | Window step | 0.5 | Distance SUPER+SHIFT+LEFT/RIGHT moves a window. Columns snap to multiples of it. |
 | Fine step | 0.125 | Distance SUPER+CTRL+SHIFT+LEFT/RIGHT moves a window, without snapping. Also the overview's resize step. |
 | Jump distance | 2 | Most empty space, in focus steps, that SUPER+LEFT/RIGHT skips to reach the next window. |
-| Travel margin | 4 | How far focus can move past the outermost window, in focus steps. |
+| Blank space past the outermost windows | 0 | How far focus and the view can go past the leftmost and rightmost window on any stratum, in focus steps. At 0 there is no space there until a window is opened, moved or widened into it. |
 | Wrap between first and last stratum | on | SUPER+UP on the top stratum goes to the bottom one, and the reverse. |
-| Wrap at the ends of a row | off | SUPER+RIGHT past the travel margin goes to the first window of the row, and the reverse. |
+| Wrap at the ends of a row | off | SUPER+RIGHT at the right end goes to the first window of the row, and the reverse. |
 | Wrap only when held | off | At an edge, wrap only on a held key or a second press. |
 | Focus after switching stratum | Window at the same position | Or the last focused window on that stratum. |
+| Landing past a stratum's windows | Stay on blank | Switching to a stratum whose windows are all off to one side of the view: stay on empty space, or go to its nearest window. |
 | When a column closes | Leave empty space | Or shift later columns left. Moving a window to another stratum counts as closing it there, except for overview drops. |
 | Empty-space indicator | Reticle and ruler | What marks the selected slot when focus is on empty space. |
 
@@ -101,7 +102,11 @@ Each group of Strata's bindings can be turned off, which leaves those keys to Om
 
 ## Overview
 
-The keys and mouse actions (see [Usage](usage#overview)).
+| Setting | Default | Effect |
+|---|---|---|
+| Letter keys | Search | Search: typing searches titles and apps right away. Move with HJKL: H, J, K and L move the selection like the arrows, and `/` starts a search. |
+
+The page also lists the keys and mouse actions (see [Usage](usage#overview)).
 
 ## Bar widget
 

@@ -113,11 +113,13 @@ namespace Strata {
         return CBox{L(o.refLand.x, o.refOpen.x), L(o.refLand.y, o.refOpen.y), L(o.refLand.w, o.refOpen.w), L(o.refLand.h, o.refOpen.h)};
     }
 
+    // Eased toward the held extent while dragging (it can be wider than the
+    // grid: room past the outermost windows to drop or widen one there).
     static std::pair<double, double> shownBounds(PHLMONITOR mon, const SOverview& o) {
-        if (o.hold)
-            return *o.hold;
         if (o.haveBounds)
             return {o.lo, o.hi};
+        if (o.hold)
+            return *o.hold;
         return bounds(mon->m_id);
     }
 
@@ -316,6 +318,9 @@ namespace Strata {
         o.open  = false;
         if (row >= 0 && row < (int)o.rows.size())
             o.row0 = row;
+        // Back on the desktop: no view past the edges (a drag there may have
+        // moved them in).
+        keepInSpan(MON->m_id, true);
         if (auto* a = strataFor(MON->m_activeWorkspace))
             o.camera0 = a->view().camera;
         o.refLand = workOf(MON);
@@ -551,6 +556,7 @@ namespace Strata {
 
         struct SPCol {
             double                 x0 = NAN, x = 0.0, w = 0.0;
+            double                 now = 0.0; // the width it shows now (a lone column can fill the screen)
             std::vector<PHLWINDOW> wins;
             bool                   changed = false;
             double                 top = 0.0, bottom = 0.0, inset = 0.0, boxW = 0.0, gap = STACK_GAP;
@@ -561,7 +567,7 @@ namespace Strata {
                 continue;
             std::vector<SPCol> cols;
             for (const auto& rc : rowColumns(workspaceByID(o.rows[r]), W)) {
-                SPCol pc{.x0 = rc.x, .x = rc.x, .w = rc.cw, .wins = rc.wins, .changed = rc.had};
+                SPCol pc{.x0 = rc.x, .x = rc.x, .w = rc.cw, .now = rc.w, .wins = rc.wins, .changed = rc.had};
                 std::vector<CBox> boxes;
                 for (const auto& w : rc.wins)
                     boxes.push_back(goalBox(mon, REF, w, r));
@@ -592,7 +598,7 @@ namespace Strata {
                         pc.changed = true;
                     }
                 } else if (d.land.kind != LAND_NONE) {
-                    SPCol pc{.x = d.land.x, .w = d.land.w, .wins = {W}, .changed = true};
+                    SPCol pc{.x = d.land.x, .w = d.land.w, .now = d.land.w, .wins = {W}, .changed = true};
                     pc.top    = d.top + r * PITCH;
                     pc.bottom = d.bottom + r * PITCH;
                     pc.inset  = d.inset;
@@ -606,6 +612,20 @@ namespace Strata {
                         c.x     = std::max(c.x, prevEnd);
                         prevEnd = c.x + c.w;
                     }
+                }
+            }
+
+            // What each column will show: its own width, or the whole screen
+            // when it's the row's only column and those fill it. One whose
+            // shown width changes (it's left alone, or joined) is laid out
+            // anew, its boxes that much wider or narrower.
+            static const auto PFSONONE = CConfigValue<Config::INTEGER>("scrolling:fullscreen_on_one_column");
+            for (auto& pc : cols) {
+                const double SHOWN = *PFSONONE && cols.size() == 1 ? 1.0 : pc.w;
+                if (std::abs(SHOWN - pc.now) > EPS) {
+                    pc.boxW    = std::max(1.0, pc.boxW + (SHOWN - pc.now) * REF.w);
+                    pc.now     = SHOWN;
+                    pc.changed = true;
                 }
             }
 
@@ -784,7 +804,13 @@ namespace Strata {
             d.resizeW = a->effW(C);
         }
 
-        o.hold = shownBounds(MON, o);
+        // The band holds still while dragging, with room past the outermost
+        // windows (beyond any travel margin) to carry this one out there, or
+        // widen it to a full screen.
+        const double M     = g_cfg.margin->value() * std::max(0.01, (double)g_cfg.viewStep->value());
+        const double ROOM  = std::max(0.0, (d.edge != 0 ? 1.0 - d.width : d.colWidth) - M);
+        const auto [LO, HI] = goalBounds(MON, o);
+        o.hold              = std::pair{LO - ROOM, HI + ROOM};
         postDrag(MON, o);
         return true;
     }
@@ -1062,8 +1088,8 @@ namespace Strata {
         const float DT  = std::clamp(std::chrono::duration<float>(NOW - o.lastFrame).count(), 0.F, 0.1F);
         o.lastFrame     = NOW;
         o.k             = 1.F - std::exp(-DT / (float)EASE_SECS);
-        if (!o.hold) {
-            const auto [LO, HI] = bounds(mon->m_id);
+        {
+            const auto [LO, HI] = o.hold ? *o.hold : bounds(mon->m_id);
             if (!o.haveBounds) {
                 o.lo         = LO;
                 o.hi         = HI;

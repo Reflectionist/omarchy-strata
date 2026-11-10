@@ -13,6 +13,7 @@
 #include <hyprland/src/layout/space/Space.hpp>
 #include <hyprland/src/layout/supplementary/DragController.hpp>
 #include <hyprland/src/managers/SeatManager.hpp>
+#include <hyprland/src/managers/eventLoop/EventLoopManager.hpp>
 #include <hyprland/src/managers/fullscreen/FullscreenController.hpp>
 #include <hyprland/src/managers/input/InputManager.hpp>
 #include <hyprland/src/output/Monitor.hpp>
@@ -297,7 +298,8 @@ void CStrataAlgorithm::recalculate(Layout::eRecalculateReason reason) {
 }
 
 void CStrataAlgorithm::newTarget(SP<ITarget> target) {
-    const auto WIN = target->window();
+    const auto WIN     = target->window();
+    const bool OPENING = firstPlacement(WIN);
 
     // Drag and drop between tiled windows: the stock drop logic decides the
     // column, positions follow from order.
@@ -322,7 +324,13 @@ void CStrataAlgorithm::newTarget(SP<ITarget> target) {
     auto&      v       = view();
     const bool VISIBLE = visibleNow();
     const auto EXP     = takeExpect(WIN);
-    const auto WIDTH   = EXP && EXP->width ? std::optional<float>((float)*EXP->width) : WIN ? WIN->m_ruleApplicator->static_.scrollingWidth : std::nullopt;
+    // Its width: an expected one (an overview drop), else its own window
+    // rule's, else, opening here, this stratum's window width.
+    auto WIDTH = EXP && EXP->width ? std::optional<float>((float)*EXP->width) : WIN ? WIN->m_ruleApplicator->static_.scrollingWidth : std::nullopt;
+    if (!WIDTH && OPENING && workspace()) {
+        if (const auto IT = g_widths.find(workspace()->m_name); IT != g_widths.end())
+            WIDTH = (float)std::clamp(IT->second, (double)MIN_COLUMN_WIDTH, (double)MAX_COLUMN_WIDTH);
+    }
 
     std::optional<double> back;
     if (WIN && workspace()) {
@@ -438,6 +446,10 @@ void CStrataAlgorithm::removeTarget(SP<ITarget> target) {
     normalize();
     m_scrollingData->recalculate();
     emit();
+
+    // The span may have shrunk: once Hyprland has picked its next focus.
+    if (const auto MON = monitorID(); MON != MONITOR_INVALID)
+        afterEvent([MON] { keepInSpan(MON); });
 }
 
 void CStrataAlgorithm::resizeTarget(const Vector2D& delta, SP<ITarget> target, Layout::eRectCorner corner) {
@@ -448,19 +460,55 @@ void CStrataAlgorithm::resizeTarget(const Vector2D& delta, SP<ITarget> target, L
         return;
     }
 
-    const double X = xOf(COL), W = effW(COL);
-    CScrollingAlgorithm::resizeTarget(delta, target, corner);
+    // Widths are Strata's own. Stock measures the right edge against the
+    // screen as scrolling sees it (strips packed in order, its own scroll
+    // offset), which isn't where Strata puts them: a window could stop growing
+    // anywhere, even with nothing but blank space beside it. Here a column
+    // grows into blank space up to a screen wide and pushes whatever is on
+    // that side along. Heights in a stack stay stock's (its width clamp would
+    // still run, so the width is put back).
+    const double X = xOf(COL), CW = COL->getColumnWidth();
+    if (delta.y != 0.0 && COL->targetDatas.size() > 1) {
+        CScrollingAlgorithm::resizeTarget({0.0, delta.y}, target, corner);
+        COL->setColumnWidth((float)CW);
+    }
 
-    // Growing from the left edge keeps the right edge where it is, as far as
-    // the column on the left allows.
-    if (edgeLeft(corner)) {
-        const auto   IDX     = m_scrollingData->idx(COL);
-        const double PREVEND = IDX > 0 ? xOf(m_scrollingData->columns[IDX - 1]) + effW(m_scrollingData->columns[IDX - 1]) : -INFINITY;
-        setX(COL, std::max(PREVEND, X + W - effW(COL)));
+    // A lone column that fills the screen (fullscreen_on_one_column) shows no
+    // width to change.
+    static const auto PFSONONE = CConfigValue<Config::INTEGER>("scrolling:fullscreen_on_one_column");
+    const bool        FORCED   = *PFSONONE && m_scrollingData->columns.size() == 1;
+    const bool        LEFT     = edgeLeft(corner);
+    const double      USABLE_W = std::max(1.0, usableArea().w);
+    const double      NW       = std::clamp(CW + (LEFT ? -delta.x : delta.x) / USABLE_W, (double)MIN_COLUMN_WIDTH, (double)MAX_COLUMN_WIDTH);
+
+    if (!FORCED && delta.x != 0.0 && std::abs(NW - CW) > 1e-6) {
+        COL->setColumnWidth((float)NW);
+        if (LEFT) {
+            // The right edge stays; columns on the left move over.
+            setX(COL, X + CW - NW);
+            auto& cols = m_scrollingData->columns;
+            for (int64_t i = m_scrollingData->idx(COL) - 1; i >= 0; --i) {
+                const double NEXT = xOf(cols[i + 1]);
+                if (xOf(cols[i]) + effW(cols[i]) > NEXT + EPS)
+                    setX(cols[i], NEXT - effW(cols[i]));
+            }
+        }
     }
     normalize();
-    m_scrollingData->recalculate(true);
+
+    // From the keyboard (no pointer drag), the view keeps the window in sight.
+    // Under the pointer it doesn't move: the edge stays under the pointer.
+    const bool MOUSE = g_layoutManager->dragController()->target() != nullptr;
+    const auto WIN   = target->window();
+    if (!MOUSE && visibleNow() && WIN && WIN == Desktop::focusState()->window() && !view().inhibited) {
+        setCursorTo(this, COL);
+        fitSlot(view(), xOf(COL), effW(COL));
+        recalcMonitor(monitorID());
+    } else
+        m_scrollingData->recalculate(true);
     emit();
+    if (NW < CW)
+        keepInSpan(monitorID());
 }
 
 // After a close: a window still on screen, nearest to the one that went;
@@ -544,6 +592,7 @@ bool CStrataAlgorithm::stepMove(PHLWINDOW w, int dir, bool fine) {
             setCursorTo(this, NB);
             fitSlot(view(), xOf(NB), effW(NB));
             recalcMonitor(monitorID());
+            keepInSpan(monitorID());
             return true;
         }
     }
@@ -565,6 +614,7 @@ bool CStrataAlgorithm::stepMove(PHLWINDOW w, int dir, bool fine) {
     setCursorTo(this, COL);
     fitSlot(view(), xOf(COL), W);
     recalcMonitor(monitorID());
+    keepInSpan(monitorID()); // moved in from the edge: that space is gone
     crossPoke("window");
     return true;
 }

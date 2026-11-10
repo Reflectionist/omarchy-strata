@@ -83,7 +83,7 @@ Hyprland re-reads the configuration a moment after the file changes, and the she
 | `profile.autostart` | array | `[]` | Commands run on the first visit after login. |
 | `profile.fullscreen` | string | `""` | Window class regex for windows that open fullscreen. |
 | `profile.windows.float`, `.maximize` | boolean | `false` | New windows open floating / maximized. |
-| `profile.windows.column_width` | number | | Width of new columns (screen widths, 0.05–1). |
+| `profile.windows.column_width` | number | | Width of windows that open on this stratum (screen widths, 0.05–1). A window routed elsewhere as it opens, or moved here later, doesn't get it; an app's own `scrolling_width` window rule wins. |
 | `profile.look.gaps_in`, `.gaps_out`, `.border_size`, `.rounding`, `.opacity` | number | | Appearance overrides for this stratum. |
 
 The default strata are `terminal`, `code`, `browser`, `notes`, `chat`, `media`, `creative` and `games`, with hotkeys 1–4 and 6–9 and the free block on 5.
@@ -104,11 +104,12 @@ The default strata are `terminal`, `code`, `browser`, `notes`, `chat`, `media`, 
 | `step` | `0.5` | Window step; columns snap to its multiples. |
 | `fine_step` | `0.125` | Fine step (nudges, overview resizing). |
 | `jump_near` | `2` | Jump distance, in focus steps. |
-| `margin` | `4` | Travel margin past the outermost window, in focus steps. |
+| `margin` | `0` | Blank space past the leftmost and rightmost window on any stratum, in focus steps (how far focus and the view can go past them). |
 | `wrap_vertical` | `true` | Wrap between the first and last stratum. |
 | `wrap_horizontal` | `false` | Wrap at the ends of a row. |
 | `wrap_hold` | `false` | Wrap only on a held key or a second press. |
 | `land_focus` | `"grid"` | Focus after switching stratum: `"grid"` (same position) or `"last"`. |
+| `land_past` | `"blank"` | Switching to a stratum whose windows are all off to one side of the view: `"blank"` (stay on empty space) or `"nearest"` (its nearest window). |
 | `close_gap` | `false` | Shift later columns left when a column closes. |
 
 ## `keys`
@@ -133,6 +134,7 @@ All `true` by default. `false` leaves those keys to Omarchy.
 | `cross.size` | `0.16` | Center tile width (fraction of the screen). |
 | `cross.fade_ms` | `800` | Time it stays after the last move. |
 | `overview.search_on_shift` | `true` | SUPER+SHIFT+TAB opens the overview with search. |
+| `overview.letters` | `"search"` | Letter keys in the overview: `"search"` (typing searches) or `"hjkl"` (H/J/K/L move the selection; `/` starts a search). |
 | `glyph.animation` | `"cage"` | `"cage"` (slide), `"crossfade"`, `"flip"` or `"none"`. |
 | `glyph.outline` | `"auto"` | `"auto"`, `"outline"` or `"filled"`. |
 | `blank.look` | `"both"` | `"both"`, `"reticle"`, `"ruler"` or `"none"`. |

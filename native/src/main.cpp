@@ -326,6 +326,33 @@ static int luaPrivate(lua_State* L) {
     return 0;
 }
 
+// hl.plugin.strata.widths({ [workspace name] = width, ... }): the column width
+// windows get when they open on that stratum (unless their own rule sets one)
+static int luaWidths(lua_State* L) {
+    g_widths.clear();
+    if (!lua_istable(L, 1))
+        return 0;
+    lua_pushnil(L);
+    while (lua_next(L, 1)) {
+        if (lua_type(L, -2) == LUA_TSTRING && lua_isnumber(L, -1)) {
+            std::string name = lua_tostring(L, -2);
+            if (name.starts_with("name:"))
+                name = name.substr(5);
+            if (!name.empty())
+                g_widths[name] = lua_tonumber(L, -1);
+        }
+        lua_pop(L, 1);
+    }
+    return 0;
+}
+
+// hl.plugin.strata.opening(address): a window Lua is routing as it opens; it
+// arrives as an opening (with the window width of the stratum it lands on)
+static int luaOpening(lua_State* L) {
+    opening(luaL_checkstring(L, 1));
+    return 0;
+}
+
 // hl.plugin.strata.wallpapers({ [ws_id] = path, ... }, base, mode, parallax, strength)
 static int luaWallpapers(lua_State* L) {
     std::unordered_map<WORKSPACEID, std::string> paths;
@@ -458,6 +485,8 @@ static const std::pair<const char*, PLUGIN_LUA_FN> LUA_FNS[] = {
     {"move_animation", luaMoveAnimation},
     {"match", luaMatch},
     {"private", luaPrivate},
+    {"widths", luaWidths},
+    {"opening", luaOpening},
     {"wallpapers", luaWallpapers},
     {"order", luaOrder},
 };
@@ -484,10 +513,11 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
                                               SFloatValueOptions{.min = 0.F, .max = 1.F});
     g_cfg.jumpNear  = makeShared<CIntValue>("plugin:strata:jump_near", "Jump straight to the next window when it is within this many view steps", 2,
                                             SIntValueOptions{.min = 0, .max = 100});
-    g_cfg.margin    = makeShared<CIntValue>("plugin:strata:margin", "View steps you can travel past the outermost window", 4, SIntValueOptions{.min = 0, .max = 100});
+    g_cfg.margin    = makeShared<CIntValue>("plugin:strata:margin", "View steps you can travel past the outermost window", 0, SIntValueOptions{.min = 0, .max = 100});
     g_cfg.wrap      = makeShared<CBoolValue>("plugin:strata:wrap", "Wrap around at the left/right travel limits", false);
     g_cfg.closeGap  = makeShared<CBoolValue>("plugin:strata:close_gap", "Closing a window pulls the windows to its right in", false);
     g_cfg.landFocus = makeShared<CStringValue>("plugin:strata:land_focus", "Switching strata focuses the window under the view (grid) or the one last used there (last)", "grid");
+    g_cfg.landPast  = makeShared<CStringValue>("plugin:strata:land_past", "Landing past all of a stratum's windows: stay on blank (blank) or go to its nearest window (nearest)", "blank");
     g_cfg.crossTrigger   = makeShared<CStringValue>("plugin:strata:cross_trigger", "When the preview cross shows: move, held, change, hold or off", "move");
     g_cfg.crossPlacement = makeShared<CStringValue>("plugin:strata:cross_placement", "Where the preview cross sits: bottom, center or topleft", "bottom");
     g_cfg.crossSize      = makeShared<CFloatValue>("plugin:strata:cross_size", "Width of the cross's centre tile as a fraction of the screen", 0.16F,
@@ -497,7 +527,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     g_cfg.crossFadeMs    = makeShared<CIntValue>("plugin:strata:cross_fade_ms", "How long the cross stays after the last move (ms)", 800, SIntValueOptions{.min = 150, .max = 10000});
 
     for (const SP<IValue>& v : std::initializer_list<SP<IValue>>{g_cfg.step, g_cfg.viewStep, g_cfg.fineStep, g_cfg.slotWidth, g_cfg.jumpNear, g_cfg.margin, g_cfg.wrap, g_cfg.closeGap,
-                                                                  g_cfg.landFocus, g_cfg.crossTrigger, g_cfg.crossPlacement, g_cfg.crossSize, g_cfg.crossFadeMs, g_cfg.debugZoom})
+                                                                  g_cfg.landFocus, g_cfg.landPast, g_cfg.crossTrigger, g_cfg.crossPlacement, g_cfg.crossSize, g_cfg.crossFadeMs, g_cfg.debugZoom})
         HyprlandAPI::addConfigValueV2(PHANDLE, v);
 
     for (const auto& m : HyprlandAPI::findFunctionsByName(PHANDLE, "recalculate")) {
@@ -534,7 +564,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         crossRenderStage(s);
     });
     // The overview's layout changes with the windows.
-    const auto later = [] { g_pEventLoopManager->doLater([] { overviewRefresh(); }); };
+    const auto later = [] { afterEvent([] { overviewRefresh(); }); };
     g_onOpen   = Event::bus()->m_events.window.open.listen([later](PHLWINDOW) { later(); });
     g_onClose  = Event::bus()->m_events.window.close.listen([later](PHLWINDOW) { later(); });
     g_onMoveWs = Event::bus()->m_events.window.moveToWorkspace.listen([later](PHLWINDOW, PHLWORKSPACE) { later(); });
@@ -542,13 +572,15 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     inputInit();
     eventFilesSweep();
+    markExisting();
 
     HyprlandAPI::reloadConfig();
 
-    return {"hypr-strata", "Strata: a 2D workspace grid layout", "Reflectionist", "1.0.0"};
+    return {"hypr-strata", "Strata: a 2D workspace grid layout", "Reflectionist", "1.1.0"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
+    afterEventCleanup();
     g_onFocus.reset();
     g_onFullscreen.reset();
     g_onWorkspace.reset();

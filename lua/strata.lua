@@ -258,8 +258,9 @@ function M.config()
     view_step = nav.view_step or 0.5,
     fine_step = nav.fine_step or 0.125,
     jump_near = nav.jump_near or 2,
-    margin = nav.margin or 4,
+    margin = nav.margin or 0,
     land_focus = nav.land_focus or "grid",
+    land_past = nav.land_past == "nearest" and "nearest" or "blank",
     close_gap = nav.close_gap == true,
   }
   S.config_cache, S.config_parse = cfg, S.parse
@@ -773,6 +774,10 @@ local function send_to(id, w)
     return
   end
   ours(w.address, function()
+    local a = api()
+    if a and a.opening then
+      a.opening(w.address) -- still opening: it gets that stratum's window width
+    end
     hl.dispatch(hl.dsp.window.move({ window = "address:" .. w.address, workspace = st.workspace, follow = false }))
   end)
 end
@@ -790,6 +795,10 @@ local function on_open(w)
     lh.used = true
     if w.workspace and not matches(w.workspace, lh.ws) then
       ours(w.address, function()
+        local a = api()
+        if a and a.opening then
+          a.opening(w.address)
+        end
         hl.dispatch(hl.dsp.window.move({ window = "address:" .. w.address, workspace = lh.ws, follow = false }))
       end)
       later(60, function()
@@ -908,10 +917,28 @@ local function profile_rules(cfg)
     if wd.maximize then
       pcall(hl.window_rule, { match = sel, maximize = true })
     end
-    if wd.column_width then
+    -- Window width: the plugin gives it to windows that open on this
+    -- stratum (widths()). A window rule can't: it matches the workspace a
+    -- window maps on, so windows opened here and routed elsewhere took it too.
+    -- (A plugin not rebuilt yet has no widths(): the old rule.)
+    local a = api()
+    if wd.column_width and not (a and a.widths) then
       pcall(hl.window_rule, { match = sel, scrolling_width = wd.column_width })
     end
   end
+end
+
+-- Each stratum's window width, by workspace name, for the plugin.
+local function stratum_widths(cfg)
+  local out = {}
+  for _, id in ipairs(stratum_list(cfg)) do
+    local st = cfg.strata[id]
+    local w = (((st.profile or {}).windows) or {}).column_width
+    if type(w) == "number" and w > 0 and type(st.workspace) == "string" then
+      out[st.workspace] = w
+    end
+  end
+  return out
 end
 
 local function stratum_of(cfg, ws)
@@ -1580,6 +1607,9 @@ local function apply_layout(cfg)
       },
     },
   })
+  -- Options added in 1.1, on their own: a plugin not rebuilt yet (which
+  -- doesn't know them) still gets everything above.
+  pcall(hl.config, { plugin = { strata = { land_past = st.land_past } } })
 
   -- Strata slide vertically with the column-scroll animation.
   local m = move_animation()
@@ -1783,6 +1813,9 @@ function M.setup()
   route_rules(cfg)
   profile_rules(cfg)
   a.private(private_names(cfg))
+  if a.widths then
+    a.widths(stratum_widths(cfg))
+  end
   -- Nothing follows windows to their strata while a session starts up.
   if S.booting == nil then
     S.booting = true
