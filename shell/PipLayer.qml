@@ -96,7 +96,11 @@ Item {
     }
     var code = ""
     var now = Date.now()
-    for (var m in want) if (!barsDone[m] || now - barsDone[m] > 15000) barsNext(m)
+    for (var m in want) {
+      var tm = toplevelAt(m)
+      var size = tm && tm.lastIpcObject && tm.lastIpcObject.size ? String(tm.lastIpcObject.size) : ""
+      if (!barsDone[m] || now - barsDone[m] > 15000 || (size !== "" && barsSize[m] !== size)) barsNext(m)
+    }
     // Now and then all of it again: a plugin that was rebuilt (and reloaded)
     // starts with no watches.
     var resync = ++ticks % 8 === 0
@@ -136,6 +140,7 @@ Item {
   property var barsDone: ({})      // address -> when it was measured
   property var barsLast: []        // the last measurement (for tests)
   property var barsCrop: ({})      // address -> the crop sent (sent again on a resync)
+  property var barsSize: ({})      // address -> its size when measured (a new size measures again)
   property string barsAddr: ""
   property int barsSamples: 0
   property var barsBright: null
@@ -151,22 +156,25 @@ Item {
     barsH = 0
     barsTimer.restart()
   }
+  // Each pixel counts how many samples it was bright in; picture is what's
+  // bright in most of them (one odd frame, mid-repaint, doesn't decide).
   function barsSample(d) {
     var n = barsW * barsH
     if (!barsBright || barsBright.length !== n) barsBright = new Array(n).fill(0)
     for (var i = 0; i < n; i++) {
-      var l = (d[i * 4] + d[i * 4 + 1] + d[i * 4 + 2]) / 3
-      if (l > barsBright[i]) barsBright[i] = l
+      if ((d[i * 4] + d[i * 4 + 1] + d[i * 4 + 2]) / 3 > 20) barsBright[i]++
     }
     if (++barsSamples < 5) return
     var x0 = barsW, y0 = barsH, x1 = -1, y1 = -1
     for (var y = 0; y < barsH; y++) for (var x = 0; x < barsW; x++) {
-      if (barsBright[y * barsW + x] <= 20) continue
+      if (barsBright[y * barsW + x] < 3) continue
       if (x < x0) x0 = x; if (y < y0) y0 = y; if (x > x1) x1 = x; if (y > y1) y1 = y
     }
     var a = barsAddr
-    barsLast = [barsW, barsH, x0, y0, x1, y1, Math.round(Math.max.apply(null, barsBright))]
+    barsLast = [barsW, barsH, x0, y0, x1, y1]
     barsDone[a] = Date.now()
+    var tl = toplevelAt(a)
+    barsSize[a] = tl && tl.lastIpcObject && tl.lastIpcObject.size ? String(tl.lastIpcObject.size) : ""
     barsAddr = ""
     barsTimer.stop()
     if (x1 < 0) return
@@ -387,6 +395,8 @@ Item {
   // For tests: what's out, and what it found.
   IpcHandler {
     target: "strataPip"
+    // Measure a window's bars now (tests).
+    function measure(addr: string): void { pip.barsDone = ({}); pip.barsNext(addr) }
     function state(): string {
       return JSON.stringify({ active: pip.active, cls: pip.activeClass, pid: pip.pid, comm: pip.comm,
                               player: pip.player ? String(pip.player.dbusName) : "", length: pip.length, frac: pip.frac,

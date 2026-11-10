@@ -122,23 +122,53 @@ namespace Strata {
         while (!t->hits.empty() && NOW - t->hits.front().first > std::chrono::seconds(3))
             t->hits.pop_front();
 
-        // The most frequent box (to a few pixels), if it's most of them.
+        // The picture is the box inside the most commits. A video redraws
+        // with every frame it shows, so its box is in nearly every commit:
+        // alone, or inside a bigger one when something else changed in the
+        // same frame (a glow around the player, a chat, a full repaint). The
+        // most frequent box alone can be one of those bigger ones, and when
+        // two are close it flips with every commit.
         std::map<std::tuple<int, int, int, int>, std::pair<int, CBox>> counts;
         for (const auto& [_, b] : t->hits) {
             auto& c = counts[{(int)std::round(b.x / 4), (int)std::round(b.y / 4), (int)std::round(b.w / 4), (int)std::round(b.h / 4)}];
             c.first++;
             c.second = b;
         }
-        int  best = 0;
-        CBox bestBox;
+        const auto inside = [](const CBox& in, const CBox& out) {
+            constexpr double T = 4.0;
+            return in.x >= out.x - T && in.y >= out.y - T && in.x + in.w <= out.x + out.w + T && in.y + in.h <= out.y + out.h + T;
+        };
+        const auto score = [&](const CBox& c) {
+            int n = 0;
+            for (const auto& [_, b] : t->hits)
+                n += inside(c, b) ? 1 : 0;
+            return n;
+        };
+        const int N = (int)t->hits.size();
+        int       best = 0;
+        CBox      bestBox;
         for (const auto& [_, c] : counts) {
-            if (c.first > best) {
-                best    = c.first;
+            if (c.first < 3)
+                continue;
+            const int S = score(c.second);
+            // Equal: the bigger box (the whole picture, not a part of it
+            // that happens to change with it).
+            if (S > best || (S == best && c.second.w * c.second.h > bestBox.w * bestBox.h)) {
+                best    = S;
                 bestBox = c.second;
             }
         }
-        if (best >= 8 && best * 2 >= (int)t->hits.size())
-            t->rect = bestBox;
+        if (N < 8 || best * 10 < N * 6)
+            return;
+        // Steady: a different box takes over only when it's clearly ahead,
+        // or the one in use has dropped out of most commits.
+        if (t->rect && !(std::abs(t->rect->x - bestBox.x) < 4 && std::abs(t->rect->y - bestBox.y) < 4 && std::abs(t->rect->w - bestBox.w) < 4 &&
+                         std::abs(t->rect->h - bestBox.h) < 4)) {
+            const int CUR = score(*t->rect);
+            if (CUR * 10 >= N * 6 && best * 10 < CUR * 12)
+                return;
+        }
+        t->rect = bestBox;
     }
 
     void pipWatch(PHLWINDOW w, bool playing) {
