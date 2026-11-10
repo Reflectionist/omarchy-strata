@@ -1,5 +1,6 @@
 // vptr X Y [middle|left|right|none]: glide the pointer to logical (X, Y) on a
-// 1800x1125 layout in small steps, then optionally click a button there.
+// 1800x1125 layout in small steps, then optionally click a button there
+// (WHEEL=N then scrolls N notches).
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -75,6 +76,17 @@ int main(int argc, char **argv) {
     usleep(getenv("HOLD_US") ? atoi(getenv("HOLD_US")) : 60000);
     zwlr_virtual_pointer_v1_button(p, now(), code, 0); zwlr_virtual_pointer_v1_frame(p); wl_display_flush(dpy);
     usleep(60000);
+    }
+  }
+  // WHEEL=N: N notches of the scroll wheel there (negative: up, positive: down).
+  if (getenv("WHEEL")) {
+    int n = atoi(getenv("WHEEL"));
+    for (int i = 0; i < abs(n); i++) {
+      zwlr_virtual_pointer_v1_axis_source(p, WL_POINTER_AXIS_SOURCE_WHEEL);
+      zwlr_virtual_pointer_v1_axis_discrete(p, now(), WL_POINTER_AXIS_VERTICAL_SCROLL, wl_fixed_from_int(n < 0 ? -15 : 15), n < 0 ? -1 : 1);
+      zwlr_virtual_pointer_v1_frame(p);
+      wl_display_flush(dpy);
+      usleep(80000);
     }
   }
   wl_display_roundtrip(dpy);

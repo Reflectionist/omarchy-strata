@@ -145,7 +145,7 @@ All `true` by default. `false` leaves those keys to Omarchy.
 | `themes.wallpaper_parallax` | `false` | Horizontal parallax. |
 | `themes.parallax_strength` | `0.08` | Parallax amount. |
 | `themes.settle_ms` | `1500` | App retint delay. |
-| `pip.corner` | `"bottom-right"` | `"top-left"`, `"top-right"`, `"bottom-left"` or `"bottom-right"`. |
-| `pip.width` | `0.25` | Initial width (fraction of the screen). |
+| `pip.corner` | `"bottom-right"` | Where each new card starts: `"top-left"`, `"top-right"`, `"bottom-left"` or `"bottom-right"`. |
+| `pip.width` | `0.25` | Each new card's width (fraction of the screen). |
 | `pip.avoid_focus` | `false` | Move away from the focused window. |
-| `pip.seek_bar` | `true` | Show the seek bar. |
+| `pip.seek_bar` | `true` | Show the thin progress line while the controls are hidden. |

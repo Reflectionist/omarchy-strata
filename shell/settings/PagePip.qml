@@ -26,6 +26,7 @@ Item {
     PanelSectionHeader { text: "Placement"; Layout.topMargin: 12 }
     SettingRow {
       label: "Corner"
+      description: "Where each new one starts."
       controlWidth: 420
       ButtonGroup {
         options: [{ value: "top-left", label: "Top left" }, { value: "top-right", label: "Top right" }, { value: "bottom-left", label: "Bottom left" }, { value: "bottom-right", label: "Bottom right" }]
@@ -35,16 +36,17 @@ Item {
     }
     SettingRow {
       label: "Size"
-      description: Math.round(page.g("width", 0.25) * 100) + "% of the screen width. Moving or resizing it is remembered per app."
+      description: Math.round(page.g("width", 0.25) * 100) + "% of the screen width, for each new one. Drag it to move it, drag an edge or scroll to resize it."
       PanelSlider { width: parent.width; minimum: 0.12; maximum: 0.5; step: 0.01; value: page.g("width", 0.25); onReleased: function(v) { page.setg("width", Math.round(v * 100) / 100) } }
     }
     SettingRow {
       label: "Avoid the focused window"
-      description: "Moves to the opposite side when it overlaps the focused window."
+      description: "Moves to the other side when a window under it gets focus. Where you drop it yourself stays."
       ToggleSwitch { checked: page.g("avoid_focus", false); onToggled: page.setg("avoid_focus", !checked) }
     }
     SettingRow {
-      label: "Show seek bar"
+      label: "Progress line"
+      description: "A thin progress line along the bottom while the controls are hidden. Hovering shows the full seek bar."
       ToggleSwitch { checked: page.g("seek_bar", true); onToggled: page.setg("seek_bar", !checked) }
     }
   }

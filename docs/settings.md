@@ -132,10 +132,10 @@ With per-stratum themes on and the theme hook installed (see [Installation](inst
 
 | Setting | Default | Effect |
 |---|---|---|
-| Corner | Bottom right | Where popped-out windows go. Each app's last position and size are remembered. |
-| Size | 25% | Initial width, as a fraction of the screen. |
-| Avoid the focused window | off | Moves to the opposite side when it overlaps the focused window. |
-| Show seek bar | on | A slim seek bar under the window. |
+| Corner | Bottom right | Where each new card starts. Moving or resizing one lasts while it's out. |
+| Size | 25% | Each new card's width, as a fraction of the screen. |
+| Avoid the focused window | off | Moves to the other side when a window under it gets focus. Where you drop it yourself stays. |
+| Progress line | on | A thin progress line along the bottom of the card while the controls are hidden. |
 
 Which players pop out is set per stratum, on its page.
 

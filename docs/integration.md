@@ -83,12 +83,6 @@ The shell plugin answers on the Omarchy shell's IPC (`omarchy-shell <target> <fu
 | `strata` | `stackJson` | The stack as JSON. |
 | `strataOverview` | `state`, `windows`, `move <dir>`, `enter` | Inspect and drive the overview's selection (used by the tests). |
 
-## Picture-in-picture handlers
+## Picture in picture
 
-When a browser window pops out, Strata sends it the `f` key so the page's video fills the window. A tool that does this better (for example a browser extension listening for `strata-pip` events) can claim a window class by adding a line to `$XDG_RUNTIME_DIR/strata-pip-handlers`:
-
-```
-<pid> <window class regex>
-```
-
-While that process runs, Strata sends no keys to matching windows and leaves the video to the tool.
+A popped-out video is a live copy of its window, drawn by the shell; the window stays in its tile. While it's out, Strata tells a browser window it's fullscreen (keeping it in its tile) and sends it `f`, so the page's video fills the window, and undoes both when it comes back. `custom>>strata-pip>>` events mark both moments for other tools. Lua: `pip_out(address, stratum)`, `pip_in(address)` (send it home) and `pip_go(address)` (go to its stratum).

@@ -3,6 +3,7 @@
 # first use). Coordinates are in an 1800x1125 layout: nested pixels x 1.25.
 #   pointer.sh X Y [left|right|middle|none]
 #   DRAG_TO=X2,Y2 [DRAG_HOLD_US=…] [DRAG_CANCEL=1] pointer.sh X Y left   (press, glide, release)
+#   WHEEL=N pointer.sh X Y none                                          (N wheel notches; negative = up)
 . "$(dirname "$(readlink -f "$0")")/env.sh"
 SOCK=$("$T/nested-sock.sh") || exit 1
 V="$RUN/vptr"

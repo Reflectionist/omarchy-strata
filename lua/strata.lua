@@ -1361,17 +1361,18 @@ end
 -- ── Picture in picture ───────────────────────────────────────────────────
 --
 -- The shell plugin sees a video playing (MPRIS) as you leave a stratum with
--- PiP on, and calls pip_out with the player's window. That window floats,
--- pins (it's on every stratum), shrinks into a corner and is told it's
--- fullscreen (so players drop their controls). Browsers get "f", which
--- YouTube takes as fullscreen if its player has the keyboard, unless another
--- tool handles their video (see pip_handled). Back on its stratum, pip_in
--- puts it back where it was. The shell draws the seek bar under it.
--- Every pop out and back in is posted as a `strata-pip` event.
+-- PiP on, shows a live copy of the player's window in a card that follows
+-- you (shell/PipLayer.qml), and calls pip_out with that window. The window
+-- itself stays in its tile. pip_out only makes its video fill it there: a
+-- browser gets "f", video sites' key for fullscreen; when the page takes it
+-- (Chromium then asks for a fullscreen window), the window stays in its tile
+-- with the page believing it's fullscreen, so the copy shows just the video.
+-- Back on its stratum (or the card's X), pip_in sends "f" again to leave.
+-- Escape doesn't do it: Chromium ignores Escape sent that way. Every pop out
+-- and back in is posted as a `strata-pip` event.
 
-local PIP_STATE = STATE_DIR .. "/pip.json" -- where you last left each app's PiP (the shell writes it)
--- The windows out right now and where they go back to. A config reload
--- wipes Lua's state (and every settings change reloads), so it's kept here.
+-- The windows out right now and where they belong. A config reload wipes
+-- Lua's state (and every settings change reloads), so it's kept here.
 local PIP_OUT = (os.getenv("XDG_RUNTIME_DIR") or "/tmp") .. "/strata-pip-out-" .. (os.getenv("HYPRLAND_INSTANCE_SIGNATURE") or "") .. ".json"
 
 -- Is the window at addr still the one recorded (same class)?
@@ -1383,7 +1384,7 @@ end
 local function pip_save()
   local out = {}
   for addr, e in pairs(S.pip or {}) do
-    out[addr] = { ws = e.ws or "", x = e.x, class = e.class or "" }
+    out[addr] = { ws = e.ws or "", x = e.x, class = e.class or "", mode = e.mode, fs = e.fs }
   end
   local f = io.open(PIP_OUT, "w")
   if f then
@@ -1400,7 +1401,7 @@ pips = function()
       -- Hyprland reuses window addresses: after the app restarts, another
       -- window (a browser tab) can have this one's address. Same class or drop.
       if type(e) == "table" and same_window(addr, e.class) then
-        S.pip[addr] = { ws = e.ws, x = e.x, class = e.class }
+        S.pip[addr] = { ws = e.ws, x = e.x, class = e.class, mode = e.mode, fs = e.fs }
       else
         dropped = true
       end
@@ -1412,49 +1413,8 @@ pips = function()
   return S.pip
 end
 
-local function pip_geometry(class, corner_override)
-  local cfg = M.config()
-  local pc = cfg.pip or {}
-  local mon = hl.get_active_monitor()
-  local scale = mon and mon.scale or 1
-  local mw, mh = (mon and mon.width or 1920) / scale, (mon and mon.height or 1080) / scale
-  local mx, my = mon and mon.x or 0, mon and mon.y or 0
-  local remembered = (read_json(PIP_STATE) or {})[class or ""]
-  if remembered and remembered.w and remembered.w > 0 then
-    return remembered.x, remembered.y, remembered.w, remembered.h
-  end
-  local w = math.floor(mw * (pc.width or 0.25))
-  local h = math.floor(w * 9 / 16)
-  local m = 24
-  local corner = corner_override or pc.corner or "bottom-right"
-  local x = corner:find("left") and (mx + m) or (mx + mw - w - m)
-  local y = corner:find("top") and (my + m + 40) or (my + mh - h - m)
-  return x, y, w, h
-end
-
 local function chromium(class)
   return class == "helium" or class == "chromium" or class == "Chromium" or class == "google-chrome" or class == "brave-browser" or (class or ""):find("^chrome%-") ~= nil
-end
-
--- Does another tool make this window's video fill it (a browser extension
--- listening for strata-pip events)? Such a tool lists itself, one line per
--- registration, in $XDG_RUNTIME_DIR/strata-pip-handlers as
--- "<pid> <window class regex>"; it counts while that process runs.
-local function pip_handled(class)
-  local f = io.open((os.getenv("XDG_RUNTIME_DIR") or "/tmp") .. "/strata-pip-handlers", "r")
-  if not f then
-    return false
-  end
-  local a = api()
-  for line in f:lines() do
-    local pid, re_ = line:match("^(%d+)%s+(.+)$")
-    if pid and exists("/proc/" .. pid .. "/stat") and a and a.match(re_, class or "") then
-      f:close()
-      return true
-    end
-  end
-  f:close()
-  return false
 end
 
 function M.pip_out(addr, from)
@@ -1462,30 +1422,34 @@ function M.pip_out(addr, from)
   if not w or not w.workspace then
     return
   end
-  local x = column_x(w.workspace.id, addr)
-  pips()[addr] = { ws = from or sel_of(w.workspace), x = x, class = w.class }
+  pips()[addr] = { ws = from or sel_of(w.workspace), class = w.class, mode = "mirror" }
   pip_save()
-  local px, py, pw, ph = pip_geometry(w.class)
   local win = "address:" .. addr
-  ours(addr, function()
-    hl.dispatch(hl.dsp.window.float({ action = "enable", window = win }))
-    hl.dispatch(hl.dsp.window.resize({ x = pw, y = ph, window = win }))
-    hl.dispatch(hl.dsp.window.move({ x = px, y = py, window = win }))
-    hl.dispatch(hl.dsp.window.pin({ action = "enable", window = win }))
-    if chromium(w.class) and not pip_handled(w.class) then
-      hl.dispatch(hl.dsp.send_shortcut({ mods = "", key = "f", window = win }))
+  -- Not one that's fullscreen already: "f" would take it out.
+  if chromium(w.class) and (w.fullscreen or 0) == 0 and (w.fullscreen_client or 0) == 0 then
+    hl.dispatch(hl.dsp.send_shortcut({ mods = "", key = "f", window = win }))
+    -- Watch for the page's answer for a moment (it may not come: "f" can
+    -- land in a text field, or a site may not use it).
+    local tries = 0
+    local function check()
+      tries = tries + 1
+      local cur, e = hl.get_window(win), pips()[addr]
+      if not cur or not e then
+        return
+      end
+      if (cur.fullscreen or 0) ~= 0 or (cur.fullscreen_client or 0) ~= 0 then
+        e.fs = true
+        pip_save()
+        pcall(function()
+          hl.dispatch(hl.dsp.window.fullscreen_state({ internal = 0, client = 2, window = win }))
+        end)
+      elseif tries < 15 then
+        later(100, check)
+      end
     end
-  end)
-  -- After the page has asked for fullscreen: keep the window windowed while
-  -- it believes it's fullscreen.
-  later(250, function()
-    pcall(function()
-      hl.dispatch(hl.dsp.window.fullscreen_state({ internal = 0, client = 2, window = win }))
-      hl.dispatch(hl.dsp.window.move({ x = px, y = py, window = win }))
-      hl.dispatch(hl.dsp.window.resize({ x = pw, y = ph, window = win }))
-    end)
-    hl.dispatch(hl.dsp.event(string.format('strata-pip>>{"open":true,"a":"%s","class":"%s"}', addr, w.class or "")))
-  end)
+    later(100, check)
+  end
+  hl.dispatch(hl.dsp.event(string.format('strata-pip>>{"open":true,"a":"%s","class":"%s"}', addr, w.class or "")))
 end
 
 function M.pip_in(addr)
@@ -1501,10 +1465,22 @@ function M.pip_in(addr)
     return
   end
   local win = "address:" .. addr
+  if e.mode == "mirror" then
+    if e.fs then
+      hl.dispatch(hl.dsp.send_shortcut({ mods = "", key = "f", window = win }))
+      later(400, function()
+        pcall(function()
+          hl.dispatch(hl.dsp.window.fullscreen_state({ internal = 0, client = 0, window = win }))
+        end)
+      end)
+    end
+    return
+  end
+  -- Out the 1.1 way (the window itself floated and pinned): back in its tile.
   local a = api()
   ours(addr, function()
     hl.dispatch(hl.dsp.window.fullscreen_state({ internal = 0, client = 0, window = win }))
-    if chromium(e.class) and not pip_handled(e.class) then
+    if chromium(e.class) then
       hl.dispatch(hl.dsp.send_shortcut({ mods = "", key = "Escape", window = win }))
     end
     hl.dispatch(hl.dsp.window.pin({ action = "disable", window = win }))
@@ -1521,10 +1497,18 @@ function M.pip_in(addr)
   end)
 end
 
--- Move a PiP window to a corner (the shell asks, to keep it out of the way).
-function M.pip_corner(addr, corner)
-  local px, py = pip_geometry(nil, corner)
-  hl.dispatch(hl.dsp.window.move({ x = px, y = py, window = "address:" .. addr }))
+-- The card's stratum button: go to the window's stratum (arriving there
+-- brings it home).
+function M.pip_go(addr)
+  local e = pips()[addr]
+  if not e or not e.ws then
+    return
+  end
+  local a = api()
+  if a then
+    a.hint(0)
+  end
+  hl.dispatch(hl.dsp.focus({ workspace = e.ws }))
 end
 
 -- Arriving on a stratum: its PiP windows come home.

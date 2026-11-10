@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.reflectionist.strata",
   "name": "Strata",
-  "version": "1.1.0",
+  "version": "1.11.0",
   "author": "Reflectionist",
   "license": "MIT",
   "description": "A 2D workspace grid for Hyprland: workspaces stack as named strata on one shared horizontal axis, with free placement of columns (blank space between windows), per-stratum app routing, themes and wallpapers, a zoomable overview with drag-and-drop, and a navigation preview. Includes a native Hyprland layout plugin, built locally by its setup.",

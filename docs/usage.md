@@ -86,6 +86,12 @@ The cross shows live thumbnails around a centre tile: the areas left and right o
 
 ## Picture in picture
 
-When you leave a stratum while a video plays in one of its configured players (by default mpv, VLC, Celluloid, Totem and browser video sites on the Media stratum), the player window follows you: it floats, stays on every stratum, moves to a corner and switches its content to fullscreen. Returning to its stratum puts it back in its column. A seek bar under the window controls playback over MPRIS.
+When you leave a stratum while a video plays in one of its configured players (by default mpv, VLC, Celluloid, Totem and browser video sites on the Media stratum), a live copy of the video follows you in a small card on every stratum. The player window itself stays in its tile. Browsers are told they're fullscreen and get the `f` key there, so the page's video fills the window; the copy is then cropped to the picture (black bars trimmed, or cut to the moving part when page around the video still shows).
 
-Browsers receive the `f` key to make the page's video fill the window, unless another tool handles that (see [Integration](integration#picture-in-picture-handlers)).
+| Input | Action |
+|---|---|
+| Drag the card | Move it anywhere; it snaps flush to screen edges. |
+| Drag an edge or corner, or scroll | Resize it. It keeps the video's shape. |
+| Hover | Show the controls: the stratum's icon (go there), X (send the video home; it keeps playing), back and forward 10 seconds, play/pause, mute (a volume slider on hover), the seek bar and the time. |
+
+A thin progress line runs along the bottom while the controls are hidden. The controls work over MPRIS; mute and volume act on the app's audio streams in PipeWire. A fullscreen window covers the card. Returning to the video's stratum, or the X, ends it. Each new card starts in the corner and at the size set in [Settings › Picture in picture](settings#picture-in-picture).
