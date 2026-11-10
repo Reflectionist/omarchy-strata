@@ -1427,6 +1427,12 @@ function M.pip_out(addr, from)
   local win = "address:" .. addr
   -- Not one that's fullscreen already: "f" would take it out.
   if chromium(w.class) and (w.fullscreen or 0) == 0 and (w.fullscreen_client or 0) == 0 then
+    -- Going fullscreen, Chromium also asks to be activated; with
+    -- misc:focus_on_activate (Omarchy turns it on) that focuses the window
+    -- and pulls the view back to its stratum. Not for this window while out.
+    pcall(function()
+      hl.dispatch(hl.dsp.window.set_prop({ prop = "focus_on_activate", value = "0", window = win }))
+    end)
     hl.dispatch(hl.dsp.send_shortcut({ mods = "", key = "f", window = win }))
     -- Watch for the page's answer for a moment (it may not come: "f" can
     -- land in a text field, or a site may not use it).
@@ -1466,6 +1472,9 @@ function M.pip_in(addr)
   end
   local win = "address:" .. addr
   if e.mode == "mirror" then
+    pcall(function()
+      hl.dispatch(hl.dsp.window.set_prop({ prop = "focus_on_activate", value = "unset", window = win }))
+    end)
     if e.fs then
       hl.dispatch(hl.dsp.send_shortcut({ mods = "", key = "f", window = win }))
       later(400, function()
