@@ -1360,19 +1360,17 @@ end
 
 -- ── Picture in picture ───────────────────────────────────────────────────
 --
--- The shell plugin sees a video playing (MPRIS) as you leave a stratum with
--- PiP on, shows a live copy of the player's window in a card that follows
--- you (shell/PipLayer.qml), and calls pip_out with that window. The window
--- itself stays in its tile. pip_out only makes its video fill it there: a
--- browser gets "f", video sites' key for fullscreen; when the page takes it
--- (Chromium then asks for a fullscreen window), the window stays in its tile
--- with the page believing it's fullscreen, so the copy shows just the video.
--- Back on its stratum (or the card's X), pip_in sends "f" again to leave.
--- Escape doesn't do it: Chromium ignores Escape sent that way. Every pop out
--- and back in is posted as a `strata-pip` event.
+-- The plugin does it (native/src/pip.cpp): while a window on the stratum
+-- you're on plays video (the shell says which, by its MPRIS player), it
+-- learns where the picture is in it; leaving that stratum, or opening the
+-- overview, shrinks the picture into a card that stays on screen, and coming
+-- back grows it home. The window never moves. The shell draws the card's
+-- controls and calls the functions below.
+--
+-- 1.11's first cut moved nothing either but sent the page "f"; a window still
+-- out that way when this loads is brought back by pip_in (and older ones,
+-- floated and pinned, too).
 
--- The windows out right now and where they belong. A config reload wipes
--- Lua's state (and every settings change reloads), so it's kept here.
 local PIP_OUT = (os.getenv("XDG_RUNTIME_DIR") or "/tmp") .. "/strata-pip-out-" .. (os.getenv("HYPRLAND_INSTANCE_SIGNATURE") or "") .. ".json"
 
 -- Is the window at addr still the one recorded (same class)?
@@ -1417,45 +1415,72 @@ local function chromium(class)
   return class == "helium" or class == "chromium" or class == "Chromium" or class == "google-chrome" or class == "brave-browser" or (class or ""):find("^chrome%-") ~= nil
 end
 
-function M.pip_out(addr, from)
-  local w = hl.get_window("address:" .. addr)
-  if not w or not w.workspace then
+-- The shell's calls.
+function M.pip_watch(addr, playing)
+  local a = api()
+  if a and a.pip_watch then
+    a.pip_watch(addr, playing == true)
+  end
+end
+
+function M.pip_config(corner, width, accent)
+  local a = api()
+  if a and a.pip_config then
+    a.pip_config(corner or "bottom-right", width or 0.25, accent or "#8cb4ff")
+  end
+end
+
+function M.pip_card(x, y, w, h)
+  local a = api()
+  return a and a.pip_card and a.pip_card(x, y, w, h)
+end
+
+function M.pip_scale(f)
+  local a = api()
+  return a and a.pip_scale and a.pip_scale(f)
+end
+
+function M.pip_drag(edges)
+  local a = api()
+  return a and a.pip_drag and a.pip_drag(edges or 0)
+end
+
+function M.pip_drag_end()
+  local a = api()
+  if a and a.pip_drag_end then
+    a.pip_drag_end()
+  end
+end
+
+-- X: home without going there (it keeps playing there).
+function M.pip_home()
+  local a = api()
+  return a and a.pip_home and a.pip_home()
+end
+
+-- The card's stratum button: go there (arriving brings it home).
+function M.pip_go()
+  local a = api()
+  local name = a and a.pip_workspace and a.pip_workspace() or ""
+  if name == "" then
     return
   end
-  pips()[addr] = { ws = from or sel_of(w.workspace), class = w.class, mode = "mirror" }
-  pip_save()
-  local win = "address:" .. addr
-  -- Not one that's fullscreen already: "f" would take it out.
-  if chromium(w.class) and (w.fullscreen or 0) == 0 and (w.fullscreen_client or 0) == 0 then
-    -- Going fullscreen, Chromium also asks to be activated; with
-    -- misc:focus_on_activate (Omarchy turns it on) that focuses the window
-    -- and pulls the view back to its stratum. Not for this window while out.
-    pcall(function()
-      hl.dispatch(hl.dsp.window.set_prop({ prop = "focus_on_activate", value = "0", window = win }))
-    end)
-    hl.dispatch(hl.dsp.send_shortcut({ mods = "", key = "f", window = win }))
-    -- Watch for the page's answer for a moment (it may not come: "f" can
-    -- land in a text field, or a site may not use it).
-    local tries = 0
-    local function check()
-      tries = tries + 1
-      local cur, e = hl.get_window(win), pips()[addr]
-      if not cur or not e then
-        return
-      end
-      if (cur.fullscreen or 0) ~= 0 or (cur.fullscreen_client or 0) ~= 0 then
-        e.fs = true
-        pip_save()
-        pcall(function()
-          hl.dispatch(hl.dsp.window.fullscreen_state({ internal = 0, client = 2, window = win }))
-        end)
-      elseif tries < 15 then
-        later(100, check)
-      end
-    end
-    later(100, check)
+  a.hint(0)
+  hl.dispatch(hl.dsp.focus({ workspace = tonumber(name) and name or ("name:" .. name) }))
+end
+
+function M.pip_crop(addr, x0, y0, x1, y1)
+  local a = api()
+  if a and a.pip_crop then
+    a.pip_crop(addr, x0, y0, x1, y1)
   end
-  hl.dispatch(hl.dsp.event(string.format('strata-pip>>{"open":true,"a":"%s","class":"%s"}', addr, w.class or "")))
+end
+
+function M.pip_announce()
+  local a = api()
+  if a and a.pip_announce then
+    a.pip_announce()
+  end
 end
 
 function M.pip_in(addr)
@@ -1504,20 +1529,6 @@ function M.pip_in(addr)
       a.place(addr, e.x)
     end
   end)
-end
-
--- The card's stratum button: go to the window's stratum (arriving there
--- brings it home).
-function M.pip_go(addr)
-  local e = pips()[addr]
-  if not e or not e.ws then
-    return
-  end
-  local a = api()
-  if a then
-    a.hint(0)
-  end
-  hl.dispatch(hl.dsp.focus({ workspace = e.ws }))
 end
 
 -- Arriving on a stratum: its PiP windows come home.

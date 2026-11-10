@@ -1,6 +1,7 @@
 #include "strata.hpp"
 #include "cross.hpp"
 #include "overview.hpp"
+#include "pip.hpp"
 #include "wallpaper.hpp"
 #include "anim.hpp"
 #include "input.hpp"
@@ -353,6 +354,75 @@ static int luaOpening(lua_State* L) {
     return 0;
 }
 
+// hl.plugin.strata.pip_watch(address, playing): a window on the stratum
+// you're on plays video (or stopped)
+static int luaPipWatch(lua_State* L) {
+    pipWatch(windowByAddress(luaL_checkstring(L, 1)), lua_toboolean(L, 2));
+    return 0;
+}
+
+// hl.plugin.strata.pip_config(corner, width, "#rrggbb"): where new cards
+// start, how wide (fraction of the screen), the edge colour
+static int luaPipConfig(lua_State* L) {
+    const std::string HEX = luaL_optstring(L, 3, "#8cb4ff");
+    CHyprColor        c{0.55F, 0.7F, 1.F, 1.F};
+    if (HEX.size() == 7 && HEX[0] == '#') {
+        try {
+            const auto V = std::stoul(HEX.substr(1), nullptr, 16);
+            c            = CHyprColor{((V >> 16) & 0xFF) / 255.F, ((V >> 8) & 0xFF) / 255.F, (V & 0xFF) / 255.F, 1.F};
+        } catch (...) {}
+    }
+    pipConfig(luaL_optstring(L, 1, "bottom-right"), luaL_optnumber(L, 2, 0.25), c);
+    return 0;
+}
+
+static int luaPipCard(lua_State* L) {
+    lua_pushboolean(L, pipCard(luaL_checknumber(L, 1), luaL_checknumber(L, 2), luaL_checknumber(L, 3), luaL_checknumber(L, 4)));
+    return 1;
+}
+
+static int luaPipScale(lua_State* L) {
+    lua_pushboolean(L, pipScale(luaL_checknumber(L, 1)));
+    return 1;
+}
+
+static int luaPipDrag(lua_State* L) {
+    lua_pushboolean(L, pipDrag((int)luaL_optinteger(L, 1, 0)));
+    return 1;
+}
+
+static int luaPipDragEnd(lua_State*) {
+    pipDragEnd();
+    return 0;
+}
+
+static int luaPipHome(lua_State* L) {
+    lua_pushboolean(L, pipHome());
+    return 1;
+}
+
+static int luaPipWorkspace(lua_State* L) {
+    lua_pushstring(L, pipWorkspace().c_str());
+    return 1;
+}
+
+// hl.plugin.strata.pip_crop(address, x0, y0, x1, y1): the picture inside a
+// window that redraws all of itself (fractions of it, black bars left out)
+static int luaPipCrop(lua_State* L) {
+    pipCrop(windowByAddress(luaL_checkstring(L, 1)), luaL_checknumber(L, 2), luaL_checknumber(L, 3), luaL_checknumber(L, 4), luaL_checknumber(L, 5));
+    return 0;
+}
+
+static int luaPipAnnounce(lua_State*) {
+    pipAnnounce();
+    return 0;
+}
+
+static int luaPipState(lua_State* L) {
+    lua_pushstring(L, pipState().c_str());
+    return 1;
+}
+
 // hl.plugin.strata.wallpapers({ [ws_id] = path, ... }, base, mode, parallax, strength)
 static int luaWallpapers(lua_State* L) {
     std::unordered_map<WORKSPACEID, std::string> paths;
@@ -486,6 +556,17 @@ static const std::pair<const char*, PLUGIN_LUA_FN> LUA_FNS[] = {
     {"match", luaMatch},
     {"private", luaPrivate},
     {"widths", luaWidths},
+    {"pip_watch", luaPipWatch},
+    {"pip_config", luaPipConfig},
+    {"pip_card", luaPipCard},
+    {"pip_scale", luaPipScale},
+    {"pip_drag", luaPipDrag},
+    {"pip_drag_end", luaPipDragEnd},
+    {"pip_home", luaPipHome},
+    {"pip_workspace", luaPipWorkspace},
+    {"pip_state", luaPipState},
+    {"pip_announce", luaPipAnnounce},
+    {"pip_crop", luaPipCrop},
     {"opening", luaOpening},
     {"wallpapers", luaWallpapers},
     {"order", luaOrder},
@@ -557,16 +638,21 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         overviewRenderPre(m);
         wallpaperRenderPre(m);
         inputRenderPre(m);
+        pipRenderPre(m);
     });
     g_onRenderStage = Event::bus()->m_events.render.stage.listen([](eRenderStage s) {
         wallpaperRenderStage(s);
         overviewRenderStage(s);
         crossRenderStage(s);
+        pipRenderStage(s);
     });
     // The overview's layout changes with the windows.
     const auto later = [] { afterEvent([] { overviewRefresh(); }); };
     g_onOpen   = Event::bus()->m_events.window.open.listen([later](PHLWINDOW) { later(); });
-    g_onClose  = Event::bus()->m_events.window.close.listen([later](PHLWINDOW) { later(); });
+    g_onClose  = Event::bus()->m_events.window.close.listen([later](PHLWINDOW w) {
+        pipWindowClosed(w);
+        later();
+    });
     g_onMoveWs = Event::bus()->m_events.window.moveToWorkspace.listen([later](PHLWINDOW, PHLWORKSPACE) { later(); });
     g_onKey         = Event::bus()->m_events.input.keyboard.key.listen([](IKeyboard::SKeyEvent e, Event::SCallbackInfo&) { crossKey(e.keycode, e.state == WL_KEYBOARD_KEY_STATE_PRESSED); });
 
@@ -595,6 +681,7 @@ APICALL EXPORT void PLUGIN_EXIT() {
     eventFilesCleanup();
     wallpaperCleanup();
     inputCleanup();
+    pipCleanup();
     // The last frame's pass is cleared only when the next one begins; a cross
     // element left in it would then run destructor code that's been unloaded.
     if (g_pHyprRenderer)
@@ -603,6 +690,8 @@ APICALL EXPORT void PLUGIN_EXIT() {
         g_pHyprRenderer->m_renderPass.removeAllOfType("CStrataOverviewPass");
     if (g_pHyprRenderer)
         g_pHyprRenderer->m_renderPass.removeAllOfType("CStrataWallpaperPass");
+    if (g_pHyprRenderer)
+        g_pHyprRenderer->m_renderPass.removeAllOfType("CStrataPipPass");
     for (const auto& [name, fn] : LUA_FNS)
         HyprlandAPI::removeLuaFunction(PHANDLE, "strata", name);
     HyprlandAPI::removeAlgo(PHANDLE, "strata");

@@ -11,6 +11,7 @@
 #include <hyprland/src/output/Monitor.hpp>
 
 #include "anim.hpp"
+#include "pip.hpp"
 
 namespace Strata {
 
@@ -69,6 +70,10 @@ namespace Strata {
         auto* mon = static_cast<Monitor::CMonitor*>(thisptr);
         g_left.reset();
         const auto OLD = mon->m_activeWorkspace;
+        // Before anything moves: a playing picture on the stratum being left
+        // starts shrinking into its card from where it is now.
+        if (mon->m_self)
+            pipSwitch(mon->m_self.lock(), OLD, ws);
         if (OLD && ws && !internal && strataFor(OLD) && strataFor(ws)) {
             const int FROM = indexOf(OLD->m_id), TO = indexOf(ws->m_id);
             const int HINT = viewFor(mon->m_id).landHint;

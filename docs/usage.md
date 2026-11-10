@@ -86,7 +86,9 @@ The cross shows live thumbnails around a centre tile: the areas left and right o
 
 ## Picture in picture
 
-When you leave a stratum while a video plays in one of its configured players (by default mpv, VLC, Celluloid, Totem and browser video sites on the Media stratum), a live copy of the video follows you in a small card on every stratum. The player window itself stays in its tile. Browsers are told they're fullscreen and get the `f` key there, so the page's video fills the window; the copy is then cropped to the picture (black bars trimmed, or cut to the moving part when page around the video still shows).
+When you leave a stratum while a video plays in one of its configured players (by default mpv, VLC, Celluloid, Totem and browser video sites on the Media stratum), the video shrinks out of its window into a small card as the stratum slides away, and stays on screen on every stratum. Opening the overview does the same. The player window itself never moves or changes; coming back to its stratum grows the card back onto it.
+
+The card shows just the picture. A browser redraws exactly its video's rectangle with each frame, so that rectangle is what the card shows (page, captions bar and all else around it left out); for players that redraw their whole window, such as mpv, black bars are trimmed.
 
 | Input | Action |
 |---|---|

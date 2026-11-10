@@ -28,6 +28,7 @@
 #include "anim.hpp"
 #include "cross.hpp"
 #include "overview.hpp"
+#include "pip.hpp"
 #include "wallpaper.hpp"
 
 namespace Strata {
@@ -297,6 +298,7 @@ namespace Strata {
         o.haveBounds = false;
         o.hold.reset();
         g_shown.clear();
+        pipOverview(MON, true);
         post(MON, o);
         g_pHyprRenderer->damageMonitor(MON);
         MON->scheduleFrame(Aquamarine::IOutput::AQ_SCHEDULE_ANIMATION);
@@ -319,8 +321,9 @@ namespace Strata {
         if (row >= 0 && row < (int)o.rows.size())
             o.row0 = row;
         // Back on the desktop: no view past the edges (a drag there may have
-        // moved them in).
+        // moved them in). Closed onto a picture's own stratum: it goes home.
         keepInSpan(MON->m_id, true);
+        pipOverview(MON, false);
         if (auto* a = strataFor(MON->m_activeWorkspace))
             o.camera0 = a->view().camera;
         o.refLand = workOf(MON);
