@@ -662,7 +662,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     HyprlandAPI::reloadConfig();
 
-    return {"hypr-strata", "Strata: a 2D workspace grid layout", "Reflectionist", "1.1.0"};
+    return {"hypr-strata", "Strata: a 2D workspace grid layout", "Reflectionist", "1.11.0"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
