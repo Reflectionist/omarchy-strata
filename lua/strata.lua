@@ -1347,6 +1347,12 @@ local PIP_STATE = STATE_DIR .. "/pip.json" -- where you last left each app's PiP
 -- wipes Lua's state (and every settings change reloads), so it's kept here.
 local PIP_OUT = (os.getenv("XDG_RUNTIME_DIR") or "/tmp") .. "/strata-pip-out-" .. (os.getenv("HYPRLAND_INSTANCE_SIGNATURE") or "") .. ".json"
 
+-- Is the window at addr still the one recorded (same class)?
+local function same_window(addr, class)
+  local w = hl.get_window("address:" .. addr)
+  return w ~= nil and (class == nil or class == "" or w.class == class)
+end
+
 local function pip_save()
   local out = {}
   for addr, e in pairs(S.pip or {}) do
@@ -1364,7 +1370,9 @@ pips = function()
     S.pip = {}
     local dropped = false
     for addr, e in pairs(read_json(PIP_OUT) or {}) do
-      if type(e) == "table" and hl.get_window("address:" .. addr) then
+      -- Hyprland reuses window addresses: after the app restarts, another
+      -- window (a browser tab) can have this one's address. Same class or drop.
+      if type(e) == "table" and same_window(addr, e.class) then
         S.pip[addr] = { ws = e.ws, x = e.x, class = e.class }
       else
         dropped = true
@@ -1462,7 +1470,7 @@ function M.pip_in(addr)
   pip_save()
   local w = hl.get_window("address:" .. addr)
   hl.dispatch(hl.dsp.event(string.format('strata-pip>>{"open":false,"a":"%s","class":"%s"}', addr, e.class or "")))
-  if not w then
+  if not w or not same_window(addr, e.class) then
     return
   end
   local win = "address:" .. addr
@@ -1738,7 +1746,15 @@ local function subscribe(a)
         pcall(on_open, live_w)
       end)
     end),
-    hl.on("window.close", soon),
+    hl.on("window.close", function(w)
+      -- A window closed while out: forget it, or its address (which Hyprland
+      -- hands out again) would pull some other window home later.
+      if w and w.address and S.pip and S.pip[w.address] then
+        S.pip[w.address] = nil
+        pip_save()
+      end
+      soon()
+    end),
     hl.on("window.title", function(w)
       pcall(on_title, w)
     end),
