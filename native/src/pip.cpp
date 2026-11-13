@@ -144,28 +144,46 @@ namespace Strata {
                 n += inside(c, b) ? 1 : 0;
             return n;
         };
+        // Only a box shaped like a video can be the picture: a player's
+        // controls along its bottom (YouTube's, redrawn at the screen's rate
+        // while the video changes at its own) sit inside every commit too,
+        // and would win on that alone.
+        const auto videoShaped = [](const CBox& b) {
+            const double A = b.w / std::max(1.0, b.h);
+            return A >= 0.4 && A <= 2.8;
+        };
         const int N = (int)t->hits.size();
-        int       best = 0;
-        CBox      bestBox;
+        std::vector<std::pair<int, CBox>> cands;
+        int                               top = 0;
         for (const auto& [_, c] : counts) {
-            if (c.first < 3)
+            if (c.first < 3 || !videoShaped(c.second))
                 continue;
-            const int S = score(c.second);
-            // Equal: the bigger box (the whole picture, not a part of it
-            // that happens to change with it).
-            if (S > best || (S == best && c.second.w * c.second.h > bestBox.w * bestBox.h)) {
-                best    = S;
-                bestBox = c.second;
+            cands.emplace_back(score(c.second), c.second);
+            top = std::max(top, cands.back().first);
+        }
+        // Of the boxes in nearly as many commits as the best, the biggest
+        // (the whole picture, not a part of it that changes with it).
+        int  best = 0;
+        CBox bestBox;
+        for (const auto& [sc, b] : cands) {
+            if (sc * 100 < top * 85)
+                continue;
+            if (best == 0 || b.w * b.h > bestBox.w * bestBox.h) {
+                best    = sc;
+                bestBox = b;
             }
         }
-        if (N < 8 || best * 10 < N * 6)
+        // In a good share of the commits: a video at half the screen's rate
+        // is in about half of them (the rest redraw only the controls).
+        if (N < 8 || best * 100 < N * 35)
             return;
         // Steady: a different box takes over only when it's clearly ahead,
-        // or the one in use has dropped out of most commits.
-        if (t->rect && !(std::abs(t->rect->x - bestBox.x) < 4 && std::abs(t->rect->y - bestBox.y) < 4 && std::abs(t->rect->w - bestBox.w) < 4 &&
-                         std::abs(t->rect->h - bestBox.h) < 4)) {
+        // or the one in use has dropped out of most commits (or isn't shaped
+        // like a video at all).
+        if (t->rect && videoShaped(*t->rect) &&
+            !(std::abs(t->rect->x - bestBox.x) < 4 && std::abs(t->rect->y - bestBox.y) < 4 && std::abs(t->rect->w - bestBox.w) < 4 && std::abs(t->rect->h - bestBox.h) < 4)) {
             const int CUR = score(*t->rect);
-            if (CUR * 10 >= N * 6 && best * 10 < CUR * 12)
+            if (CUR * 100 >= N * 35 && best * 10 < CUR * 12)
                 return;
         }
         t->rect = bestBox;
