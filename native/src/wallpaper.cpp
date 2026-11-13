@@ -52,6 +52,36 @@ namespace Strata {
     static wl_event_source*                                                    g_pollTimer = nullptr;
     static std::atomic<int>                                                    g_inFlight  = 0;
 
+    // One decoder thread, one picture at a time. hyprgraphics' JPEG decoder
+    // keeps its error state (a jmp_buf) in one process-wide place: two
+    // decodes at once, and a bad file in one could jump into the other's
+    // stack and take the compositor down.
+    static std::mutex              g_queueLock;
+    static std::condition_variable g_queueCv;
+    static std::deque<std::string> g_queue;
+    static std::thread             g_worker;
+    static bool                    g_stop = false;
+
+    static void decodeLoop() {
+        for (;;) {
+            std::string path;
+            {
+                std::unique_lock lk(g_queueLock);
+                g_queueCv.wait(lk, [] { return g_stop || !g_queue.empty(); });
+                if (g_stop)
+                    return;
+                path = std::move(g_queue.front());
+                g_queue.pop_front();
+            }
+            auto img = std::make_shared<Hyprgraphics::CImage>(path);
+            {
+                std::lock_guard lk(g_doneLock);
+                g_done.emplace_back(path, img);
+            }
+            g_inFlight--;
+        }
+    }
+
     static int onPoll(void*);
 
     static void armPoll() {
@@ -96,14 +126,13 @@ namespace Strata {
             return nullptr;
         g_loading.insert(path);
         g_inFlight++;
-        std::thread([path] {
-            auto img = std::make_shared<Hyprgraphics::CImage>(path);
-            {
-                std::lock_guard lk(g_doneLock);
-                g_done.emplace_back(path, img);
-            }
-            g_inFlight--;
-        }).detach();
+        {
+            std::lock_guard lk(g_queueLock);
+            g_queue.push_back(path);
+        }
+        if (!g_worker.joinable())
+            g_worker = std::thread(decodeLoop);
+        g_queueCv.notify_one();
         armPoll();
         return nullptr;
     }
@@ -311,10 +340,21 @@ namespace Strata {
     }
 
     void wallpaperCleanup() {
-        // A decode still running would finish inside code that's being
-        // unloaded: let it (a picture takes well under a second).
-        for (int i = 0; i < 300 && g_inFlight > 0; ++i)
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        // The decoder runs code that's being unloaded: stop it, letting a
+        // picture it's on finish (well under a second), and wait for it.
+        {
+            std::lock_guard lk(g_queueLock);
+            g_stop = true;
+            g_queue.clear();
+        }
+        g_queueCv.notify_all();
+        if (g_worker.joinable())
+            g_worker.join();
+        {
+            std::lock_guard lk(g_doneLock);
+            g_done.clear();
+        }
+        g_inFlight = 0;
         if (g_pollTimer) {
             wl_event_source_remove(g_pollTimer);
             g_pollTimer = nullptr;

@@ -25,6 +25,7 @@
 #include <any>
 #include <chrono>
 #include <cmath>
+#include <condition_variable>
 #include <deque>
 #include <expected>
 #include <format>
